@@ -1,7 +1,5 @@
 import torch
 from torch import nn
-from .utils import AddBias
-import torch.nn.functional as F
 
 
 class Unet(nn.Module):
@@ -10,7 +8,6 @@ class Unet(nn.Module):
         Neural network for semantic image segmentation U-Net (PyTorch),
         Reference:  Falk, T. et al. U-Net: deep learning for cell counting, detection, and morphometry. Nat Methods 16,
         67–70 (2019).
-
 
         Parameters
         ----------
