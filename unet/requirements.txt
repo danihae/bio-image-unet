@@ -1,0 +1,9 @@
+# python packages
+tifffile~=2020.10.1
+skimage
+barbar~=0.2.1
+tqdm~=4.50.2
+torch
+albumentations~=0.5.1
+numpy~=1.19.4
+scikit-image~=0.18.1
