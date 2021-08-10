@@ -27,8 +27,6 @@ from .predict import Predict
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-print('Import Siam-UNet ...')
-
 
 class Trainer:
     def __init__(self, dataset, num_epochs, batch_size=4, lr=1e-3, n_filter=64, val_split=0.2,
