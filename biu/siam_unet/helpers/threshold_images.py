@@ -34,5 +34,4 @@ def invert_images(in_path, out_path):
 
 if __name__ == '__main__':
     # threshold all the images I have drawn 
-    import constants
-    invert_images(f'/home/longyuxi/Documents/mount/unet_pytorch/training_data/training_data/yokogawa/for_siam/label', '/home/longyuxi/Documents/mount/unet_pytorch/training_data/training_data/yokogawa/for_siam/label_inverted')
+    pass

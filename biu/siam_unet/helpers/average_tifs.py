@@ -2,11 +2,16 @@ import cv2 # type: ignore
 import numpy as np
 from util import write_info_file
 
-import platform
-if platform.system() != 'Linux':
-    raise Exception  # this script is designed to use Linux bash commands. Please use Linux
-
 def average_tifs(inputs : list, output):
+	"""Averages a list of single channel tiff movies
+
+	Args:
+		inputs (list): A list of paths (str) to tiff movies
+		output (str): Location to output the tiff file
+
+	Raises:
+		IOError: If one of the input tiff movies is not found
+	"""
 	tifs = []
 	for tiff_movie in inputs:
 		retval, imgs = cv2.imreadmulti(tiff_movie)
@@ -35,9 +40,4 @@ def average_tifs(inputs : list, output):
 
 
 if __name__ == '__main__':
-	# average_tifs(['/home/longyuxi/Documents/mount/predicted_out/predicted_newly_drawn_21B11-shgGFP-kin-18-bro4_epoch_500.tif', '/home/longyuxi/Documents/mount/predicted_out/predicted_newly_drawn_21B11-shgGFP-kin-18-bro4_epoch_500.tif'], 'z.tif')
-	# average_tifs(['/home/longyuxi/Documents/mount/predicted_out/predicted_newly_drawn_21C04_shgGFP_kin_2_Pos4_epoch_500.tif', '/home/longyuxi/Documents/mount/predicted_out/old_self_model_predictions/predicted_old_model_21C04_shgGFP_kin_2_Pos4.tif'], '/home/longyuxi/Documents/mount/averaged_tifs/21C04_averaged.tif')
-	from tif_to_mp4 import convert_to_mp4
-	# for threshold_val in [50, 100, 150, 200, 250]:
-	# 	convert_to_mp4('/home/longyuxi/Documents/mount/averaged_tifs/21C04_averaged.tif', f'/home/longyuxi/Documents/mount/averaged_tifs/21C04_averaged_thresholded_threshold_{threshold_val}.mp4', perform_threshold=True, threshold_val=threshold_val)
-	convert_to_mp4('/home/longyuxi/Documents/mount/averaged_tifs/21C04_averaged.tif', '/home/longyuxi/Documents/mount/averaged_tifs/21C04_averaged.mp4')
+	pass

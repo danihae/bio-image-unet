@@ -6,6 +6,8 @@ packages = [
 version = "0.1.1"
 description = "Implementations of U-Net and Siam U-Net for biological image segmentation"
 authors = ["Yuxi Long <longyuxi@live.com>", "Daniel Haertter <dani.hae@posteo.de>"]
+readme = "README.md"
+license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.8"

@@ -20,7 +20,7 @@ import torch.optim as optim
 from . import losses
 
 from .helpers.util import write_info_file
-from .helpers.md5sum import md5sum, md5sum_folder
+from .helpers.__md5sum__ import md5sum, md5sum_folder
 import wandb
 from .siam_unet import Siam_UNet
 from .predict import Predict

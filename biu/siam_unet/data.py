@@ -23,7 +23,7 @@ from albumentations import (
 from .losses import logcoshDiceLoss, BCEDiceLoss
 
 from .helpers.util import write_info_file
-from .helpers.md5sum import md5sum, md5sum_folder
+from .helpers.__md5sum__ import md5sum, md5sum_folder
 import cv2
 
 import wandb
