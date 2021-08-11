@@ -14,8 +14,9 @@ from torch.utils.data import Dataset
 
 class DataProcess(Dataset):
     def __init__(self, source_dir, dim_out=(256, 256), aug_factor=10, data_path='../data/',
-                 dilate_mask=0, val_split=0.2, invert=False, skeletonize=False, create=True, clip_threshold=(0.2, 99.8),
-                 shiftscalerotate=(0, 0, 0), noise_amp=10, brightness_contrast=(0.25, 0.25), rescale=None):
+                 dilate_mask=0, dilate_kernel='disk', val_split=0.2, invert=False, skeletonize=False, create=True,
+                 clip_threshold=(0.2, 99.8), shiftscalerotate=(0, 0, 0), noise_amp=10, brightness_contrast=(0.25, 0.25),
+                 rescale=None):
         """
         Create training data object for network training
 
@@ -37,6 +38,8 @@ class DataProcess(Dataset):
             Base path of directories for training data
         dilate_mask
             Radius of binary dilation of masks [-2, -1, 0, 1, 2]
+        dilate_kernel : str
+            Dilation kernel ('disk' or 'square')
         val_split : float
             Validation split for training
         invert : bool
@@ -69,6 +72,7 @@ class DataProcess(Dataset):
         self.noise_amp = noise_amp
         self.rescale = rescale
         self.dilate_mask = dilate_mask
+        self.dilate_kernel = dilate_kernel
         self.val_split = val_split
         self.mode = 'train'
 
@@ -138,10 +142,16 @@ class DataProcess(Dataset):
                 mask_i = 1 - mask_i
                 mask_i = morphology.skeletonize(mask_i)
                 mask_i = 255 * (1 - mask_i)
+            if self.dilate_kernel == 'disk':
+                kernel = morphology.disk
+            elif self.dilate_kernel == 'square':
+                kernel = morphology.square
+            else:
+                raise ValueError(f'Dilate kernel {self.dilate_kernel} unknown!')
             if self.dilate_mask > 0:
-                mask_i = morphology.erosion(mask_i, morphology.disk(self.dilate_mask))
+                mask_i = morphology.erosion(mask_i, morphology.octagon(self.dilate_mask, self.dilate_mask-1))
             elif self.dilate_mask < 0:
-                mask_i = morphology.dilation(mask_i, morphology.disk(-self.dilate_mask))
+                mask_i = morphology.dilation(mask_i, morphology.octagon(-self.dilate_mask, -self.dilate_mask-1))
             if self.invert:
                 mask_i = 255 - mask_i
             mask_i = mask_i.astype('uint8')

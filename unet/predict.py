@@ -13,7 +13,8 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 class Predict:
-    def __init__(self, tif_file, result_name, model_params, network=Unet, n_filter=64, resize_dim=(512, 512),
+    """Class for prediction of movies and images with U-Net"""
+    def __init__(self, tif_file, result_name, model_params, network=Unet, n_filter=32, resize_dim=(512, 512),
                  invert=False, frame_lim=None, clip_threshold=(0., 99.8), add_tile=0, normalize_result=False,
                  progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
         """
