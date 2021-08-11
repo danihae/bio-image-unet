@@ -5,7 +5,7 @@ import numpy as np
 import tifffile
 import torch
 
-from progress import ProgressNotifier
+from biu.progress import ProgressNotifier
 from .unet import Unet
 from .utils import save_as_tif
 

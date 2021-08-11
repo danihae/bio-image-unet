@@ -1,5 +1,7 @@
 import numpy as np
 import tifffile
+from torch import nn
+import torch
 
 
 def save_as_tif(imgs, filename, normalize=False):
@@ -23,3 +25,13 @@ def save_as_tif(imgs, filename, normalize=False):
     imgs = imgs.astype('uint8')
     tifffile.imsave(filename, imgs)
     print('Saving prediction results as %s' % filename)
+
+class AddBias(nn.Module):
+    """Add scalar to tensor"""
+
+    def __init__(self, bias=0):
+        super(AddBias, self).__init__()
+        self.bias = bias
+
+    def forward(self, input):
+        return torch.add(input, self.bias)

@@ -7,7 +7,7 @@ def create_pixel_value_histogram(input_tifs, frames_per_hist=100, bin_width=8):
 	"""Creates a histogram for the pixel values in a tif file
 
 	Args:
-		input_tifs (str path to a .tif file): input
+		input_tifs (str path to .tif files): input
 		frames_per_hist (int, optional): number of frames to plot a histogram. Defaults to 100.
 		bin_width (int, optional): bin width on the outpuut tif plot. Should be set to a value divisible by 256. Defaults to 8.
 

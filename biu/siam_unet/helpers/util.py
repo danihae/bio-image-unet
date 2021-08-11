@@ -1,6 +1,6 @@
 from .cuda_test import get_gpu_name # type: ignore
-from .cpu_count import get_cpu_count
-from .md5sum import md5sum
+from .__cpu_count__ import get_cpu_count
+from .__md5sum__ import md5sum
 import os
 import time
 import platform
@@ -101,7 +101,4 @@ def grid_six_videos(video1, video2, video3, video4, video5, video6, output):
 
 
 if __name__ == '__main__':
-	# import constants
-	# vertically_stack_two_videos(video1=f'{constants.RAZER_LOCAL_OUT_DIR}/siam_bce_predicted_lowmem_484_21B11-shgGFP-kin-18-bro4.mp4', video2=f'{constants.RAZER_LOCAL_OUT_DIR}/predicted_21B11-shgGFP-kin-18-bro4_with_cosh_dice_normalized.mp4', output=f'{constants.RAZER_LOCAL_OUT_DIR}/21B11_siam_bce_cosh_stack.mp4')
-	import constants
-	create_zoomed_in_comparison(f'{constants.RAZER_LOCAL_OUT_DIR}/mp4s/og_unet_as_21B25_shgGFP_kin_1_Pos0.mp4', f'{constants.RAZER_LOCAL_OUT_DIR}/mp4s/siam_bce_amnio_100_epochs_21B25_shgGFP_kin_1_Pos0.mp4', width='400', height='400', x='950', y='150', output=f'{constants.RAZER_LOCAL_OUT_DIR}/21B25_old_siam_bce_comparison.mp4')
+	pass
