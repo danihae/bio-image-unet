@@ -2,16 +2,18 @@
 
 Implementations of U-Net and Siam U-Net for biological image segmentation
 
+### Authors
+[Daniel Härtter](<daniel.haertter@duke.edu>) (Duke University, University of Göttingen) \
+[Yuxi Long](<longyuxi@live.com>) (Duke University) \
+[Andreas Primeßnig](<andreas.prime@hotmail.de>)
 
-# Authors
-Yuxi Long (longyuxi@live.com)
-Daniel Haertter (dani.hae@posteo.de)
-Andreas ? (?@?.?)
+### Installation
+Install from [PyPI](https://pypi.org/project/bio-image-unet/): `pip install bio-image-unet` 
 
-# Documentation
 
+### Documentation
 TBD
 
-# Usage example
+### Usage example
 
 Link to getting started notebook TBD
