@@ -18,9 +18,7 @@ matplotlib = "^3.4.2"
 tifffile = "*"
 opencv-python ="^4.5.2"
 tqdm = "^4.61.2"
-torch = "^1.7.0"
 numpy = "^1.19.5"
-wandb = "^0.10.33"
 scikit-image = "^0.18.2"
 
 [tool.poetry.dev-dependencies]
