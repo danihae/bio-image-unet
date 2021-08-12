@@ -26,8 +26,6 @@ from .helpers.util import write_info_file
 from .helpers.__md5sum__ import md5sum, md5sum_folder
 import cv2
 
-import wandb
-
 class DataProcess(Dataset):
     def __init__(self, source_dir, file_ext='.tif', dim_out=(256, 256), aug_factor=10, data_path='./data/',
                  dilate_mask=0, val_split=0.2, invert=False, skeletonize=False, create=True, clip_thres=(0.2, 99.8),
