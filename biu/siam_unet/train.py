@@ -21,7 +21,6 @@ from . import losses
 
 from .helpers.util import write_info_file
 from .helpers.__md5sum__ import md5sum, md5sum_folder
-import wandb
 from .siam_unet import Siam_UNet
 from .predict import Predict
 
@@ -30,7 +29,7 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class Trainer:
     def __init__(self, dataset, num_epochs, batch_size=4, lr=1e-3, n_filter=64, val_split=0.2,
-                 save_dir='./', save_name='model.pth', save_iter=False, loss_function=losses.logcoshDiceLoss, load_weights=False, use_wandb=False):
+                 save_dir='./', save_name='model.pth', save_iter=False, loss_function=losses.logcoshDiceLoss, load_weights=False):
         """Trainer for Siam-UNet
 
         Args:
@@ -44,22 +43,13 @@ class Trainer:
             save_name (str, optional): the name of the saved model. Only used when save_iter is false. Defaults to 'model.pth'.
             save_iter (bool, optional): saves the model at each iteration under the name model_epoch_{iter}.pth. Defaults to False.
             loss_function: losses.logcoshDiceLoss or losses.BCEDiceLoss. Defaults to losses.logcoshDiceLoss.
-            use_wandb (bool, optional): whether to use wandb.ai to track training. Defaults to False.
         """
-        if use_wandb:
-            wandb.init(project='unet_pytorch', name=f'Siam UNet Cosh at {time.ctime()}', entity='')
 
         self.model = Siam_UNet(n_filter=n_filter).to(device)
-        self.use_wandb = use_wandb
-        if use_wandb:
-            wandb.watch(self.model, log_freq=100)
 
         self.data = dataset
         self.num_epochs = num_epochs
         self.batch_size = batch_size
-        if use_wandb:
-            wandb.config.update({"batch_size": self.batch_size, "epochs": self.num_epochs})
-
         self.lr = lr
         self.best_loss = torch.tensor(float('inf'))
         self.save_iter = save_iter
@@ -103,9 +93,6 @@ class Trainer:
                 self.optimizer.zero_grad()
                 loss.backward()
                 self.optimizer.step()
-                if self.use_wandb:
-                    wandb.log({"loss": loss, "epoch": epoch})
-
 
         elif mode == 'val':
             loss_list = []
