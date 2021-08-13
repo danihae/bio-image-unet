@@ -193,13 +193,13 @@ class Predict:
                     stack_result_i[n, self.X_start[j]:self.X_start[j] + self.resize_dim[0],
                     self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]] = result_patches[i * self.N_per_img + n, 0, :,
                                                                             :]
-                    # average overlapping regions
-                    if self.imgs_shape[0] > 1:  # if stack
-                        imgs_result[i] = np.nanmean(stack_result_i, axis=0)
-                    elif self.imgs_shape[0] == 1:  # if only one image
-                        imgs_result = np.nanmean(stack_result_i, axis=0)
                     n += 1
-            del stack_result_i
+
+            # average overlapping regions
+            if self.imgs_shape[0] > 1:  # if stack
+                imgs_result[i] = np.nanmean(stack_result_i, axis=0)
+            elif self.imgs_shape[0] == 1:  # if only one image
+                imgs_result = np.nanmean(stack_result_i, axis=0)
 
         # change to input size (if zero padding)
         if self.imgs_shape[0] > 1:  # if stack
