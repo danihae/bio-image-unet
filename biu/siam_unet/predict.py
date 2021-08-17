@@ -166,10 +166,11 @@ class Predict:
                                         self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
                     n += 1
         elif self.imgs_shape[0] == 1:
-            raise Exception # I didn't implement this part
             for j in range(self.N_x):
                 for k in range(self.N_y):
                     patches[n, 0, :, :] = imgs[self.X_start[j]:self.X_start[j] + self.resize_dim[0],
+                                          self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+                    patches[n, 1, :, :] = imgs[self.X_start[j]:self.X_start[j] + self.resize_dim[0],
                                           self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
                     n += 1
         return patches
