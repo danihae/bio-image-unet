@@ -13,6 +13,7 @@ from torch.utils.data import Dataset
 
 
 class DataProcess(Dataset):
+    """Class for training data generation (processing, splitting, augmentation)"""
     def __init__(self, source_dir, dim_out=(256, 256), aug_factor=10, data_path='../data/',
                  dilate_mask=0, dilate_kernel='disk', val_split=0.2, invert=False, skeletonize=False, create=True,
                  clip_threshold=(0.2, 99.8), shiftscalerotate=(0, 0, 0), noise_amp=10, brightness_contrast=(0.25, 0.25),
@@ -149,9 +150,9 @@ class DataProcess(Dataset):
             else:
                 raise ValueError(f'Dilate kernel {self.dilate_kernel} unknown!')
             if self.dilate_mask > 0:
-                mask_i = morphology.erosion(mask_i, morphology.octagon(self.dilate_mask, self.dilate_mask-1))
+                mask_i = morphology.erosion(mask_i, kernel(self.dilate_mask))
             elif self.dilate_mask < 0:
-                mask_i = morphology.dilation(mask_i, morphology.octagon(-self.dilate_mask, -self.dilate_mask-1))
+                mask_i = morphology.dilation(mask_i, kernel(-self.dilate_mask))
             if self.invert:
                 mask_i = 255 - mask_i
             mask_i = mask_i.astype('uint8')
