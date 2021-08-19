@@ -61,10 +61,6 @@ class Predict:
         self.clip_threshold = clip_threshold
         self.frame_lim = frame_lim
         self.result_name = result_name
-        if self.result_name == 'nodes':
-            self.folder = os.path.dirname(self.tif_file)
-        else:
-            self.folder = re.split('.tif', self.tif_file)[0] + '/'
 
         # read, preprocess and split data
         imgs = self.__read_data()

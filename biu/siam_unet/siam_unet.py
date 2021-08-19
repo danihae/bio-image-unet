@@ -2,7 +2,7 @@ from torch import nn
 import torch
 
 class Siam_UNet(nn.Module):
-    def __init__(self, n_filter=64, bias=0):
+    def __init__(self, n_filter=64):
         super().__init__()
         # encode
         self.encode1 = self.conv(1, n_filter)
@@ -52,7 +52,6 @@ class Siam_UNet(nn.Module):
         self.decode9 = self.conv(1 * n_filter, 1)
         self.final = nn.Sequential(
             nn.Conv2d(1, 1, kernel_size=1, padding=0),
-            AddBias(bias=bias),
             nn.Sigmoid(),
         )
 
@@ -127,14 +126,3 @@ class Siam_UNet(nn.Module):
         d9 = self.decode9(d8)
         out = self.final(d9)
         return out
-
-class AddBias(nn.Module):
-    """Add scalar to tensor"""
-
-    def __init__(self, bias=0):
-        super(AddBias, self).__init__()
-        self.bias = bias
-
-    def forward(self, input):
-        return torch.add(input, self.bias)
-

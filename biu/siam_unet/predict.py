@@ -1,18 +1,14 @@
-import os, glob, re, shutil
-import subprocess
-from sys import platform
+import os
 
-import tifffile
+import cv2
 import numpy as np
+import tifffile
+import torch
 from tifffile.tifffile import TiffFile
 from tqdm import tqdm as tqdm
 
-import torch
-from torch import nn as nn, flatten
-
+from .helpers.__md5sum__ import md5sum
 from .helpers.util import write_info_file
-from .helpers.__md5sum__ import md5sum, md5sum_folder
-import cv2
 from .siam_unet import Siam_UNet
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
@@ -26,37 +22,49 @@ class Predict:
     4) Stitching of predicted patches and averaging of overlapping regions
     """
 
-    def __init__(self, tif_file, result_name, model_params, n_filter=64, resize_dim=(512, 512), invert=False, clip_thres=(0.2, 99.8), add_tile=0, bias=1):
-        """Predicts a tif movie
+    def __init__(self, tif_file, result_name, model_params, n_filter=32, resize_dim=(512, 512), invert=False,
+                 clip_threshold=(0.0, 99.8), add_tile=0, normalize_result=False):
+        """
+        Predicts a tif movie
 
-        Args:
-            tif_file (str): Path to input tif stack
-            result_name (str): 
-            model_params (str): Path to model parameters file. Usually ends in `.pth`.
-            n_filter (int, optional): Number of filters used when training the model. Must use the same n_filter parameter for training and predicting. Defaults to 64.
-            resize_dim (tuple, optional): Resize dimension. Same resize dimension must be used for training and predicting. Defaults to (512, 512).
-            invert (bool, optional): Whether to invert the output. Defaults to False.
-            clip_thres (tuple, optional): Threshold over which to clip the mask and image pair. Defaults to (0.2, 99.8).
-            add_tile (int, optional): How many additional patches to add to each axis. Changing this parameter should be a miniscule difference. Defaults to 0.
-            bias (int, optional): Passed to the `bias` of Siam-UNet when predicting. Would add a bias term to the network output before its final sigmoid gate. Defaults to 1.
+        Parameters
+        ----------
+        tif_file : str
+            Path to input tif stack
+        result_name : str
+            Path of result file
+        tif_file : str
+            path of tif file
+        result_name : str
+            path for result
+        model_params : str
+            path of u-net parameters (.pth file)
+        n_filter : int
+            Number of convolution filters
+        resize_dim
+            Image dimensions for resizing for prediction
+        invert : bool
+            Invert greyscale of image(s) before prediction
+        clip_threshold : Tuple[float, float]
+            Clip threshold for image intensity before prediction
+        add_tile : int, optional
+            Add additional tiles for splitting large images to increase overlap
+        normalize_result : bool
+            If True, results are normalized to [0, 255]
         """
         self.tif_file = tif_file
         self.resize_dim = resize_dim
         self.add_tile = add_tile
         self.n_filter = n_filter
-        self.bias = bias
         self.invert = invert
-        self.clip_thres = clip_thres
+        self.clip_threshold = clip_threshold
         self.result_name = result_name
-        if self.result_name == 'nodes':
-            self.folder = os.path.dirname(self.tif_file)
-        else:
-            self.folder = re.split('.tif', self.tif_file)[0] + '/'
+        self.normalize_result = normalize_result  # todo to be implemented for Siam-U-Net?
 
         write_info_file(result_name + '.info.txt', f'Mode: Predict with Siam_UNet\nOutfile name: {result_name}\nInput file: {tif_file}\nHash: {md5sum(tif_file)}Model: {model_params}\nModel hash:{md5sum(model_params)}')
 
         # load model
-        self.model = Siam_UNet(n_filter=self.n_filter, bias=self.bias).to(device)
+        self.model = Siam_UNet(n_filter=self.n_filter).to(device)
         self.model.load_state_dict(torch.load(model_params)['state_dict'])
         self.model.eval()
 
@@ -75,6 +83,7 @@ class Predict:
         self.N_per_img = self.N_x * self.N_y
         self.N = self.N_x * self.N_y   # total number of patches
 
+        # predict each pair, and save the output of each one as a separate image
         os.makedirs(temp_dir, exist_ok=True)
         print('Predicting data ...')
         for i in tqdm(range(self.tif_len), unit='frame'):
@@ -92,12 +101,10 @@ class Predict:
             imgs_result = self.stitch(result_patches)
             cv2.imwrite(filename=f'{temp_dir}/{i}.tif', img=imgs_result.astype('uint8'), )
 
-
-        # predict each pair, and save the output of each one as a separate image
-
         # merge the images and save as tif file
         print(f'Saving prediction results as {result_name}...')
-        tifffile.imwrite(data=tqdm(self.individual_tif_generator(dir=temp_dir), total=self.tif_len, unit='frame'), file=self.result_name, dtype=np.uint8, shape=self.imgs_shape)
+        tifffile.imwrite(data=tqdm(self.individual_tif_generator(dir=temp_dir), total=self.tif_len, unit='frame'),
+                         file=self.result_name, dtype=np.uint8, shape=self.imgs_shape)
         os.system(f'rm -rf \'{temp_dir}\'')
 
     def individual_tif_generator(self, dir):
@@ -105,26 +112,19 @@ class Predict:
         for i in range(self.tif_len):
             yield tifffile.imread(f'{dir}/{i}.tif')
 
-    def open_folder(self):
-        if platform.system() == "Windows":
-            os.startfile(self.folder)
-        elif platform.system() == "Linux":
-            subprocess.Popen(["xdg-open", self.folder])
-
-
     def preprocess(self, imgs):
         if len(imgs.shape) == 3:
             for i, img in enumerate(imgs):
-                img = np.clip(img, a_min=np.nanpercentile(img, self.clip_thres[0]),
-                              a_max=np.percentile(img, self.clip_thres[1]))
+                img = np.clip(img, a_min=np.nanpercentile(img, self.clip_threshold[0]),
+                              a_max=np.percentile(img, self.clip_threshold[1]))
                 img = img - np.min(img)
                 img = img / np.max(img) * 255
                 if self.invert:
                     img = 255 - img
                 imgs[i] = img
         if len(imgs.shape) == 2:
-            imgs = np.clip(imgs, a_min=np.nanpercentile(imgs, self.clip_thres[0]),
-                           a_max=np.percentile(imgs, self.clip_thres[1]))
+            imgs = np.clip(imgs, a_min=np.nanpercentile(imgs, self.clip_threshold[0]),
+                           a_max=np.percentile(imgs, self.clip_threshold[1]))
             imgs = imgs - np.min(imgs)
             imgs = imgs / np.max(imgs) * 255
             if self.invert:
@@ -209,15 +209,30 @@ class Predict:
                 n += 1
         # average overlapping regions
         imgs_result = np.nanmean(stack_result_i, axis=0)
-        del stack_result_i
 
         # change to input size (if zero padding)
         imgs_result = imgs_result[:self.imgs_shape[1], :self.imgs_shape[2]]
 
         return imgs_result
 
-    def save_as_tif(self, imgs, filename):
+    def save_as_tif(self, imgs, filename, normalize=False):  # todo use normalization part, else remove function?
+        """
+        Save numpy array as tif file
+
+        Parameters
+        ----------
+        imgs : np.array
+            Data array
+        filename : str
+            Filepath to save result
+        normalize : bool
+            If true, data is normalized [0, 255]
+        """
+        if normalize:
+            imgs = imgs.astype('float32')
+            imgs = imgs - np.nanmin(imgs)
+            imgs /= np.nanmax(imgs)
+            imgs *= 255
         imgs = imgs.astype('uint8')
         tifffile.imsave(filename, imgs)
         print('Saving prediction results as %s' % filename)
-
