@@ -85,8 +85,9 @@ class Trainer:
                 # Compute and print loss
                 loss = self.criterion(y_pred, y_i)
 
-                if random.random() > 0.99:
-                    print('Mean, min, max', torch.mean(y_i), torch.min(y_i), torch.max(y_i))
+                # Debug code
+                # if random.random() > 0.99:
+                #     print('Mean, min, max', torch.mean(y_i), torch.min(y_i), torch.max(y_i))
 
 
                 # Zero gradients, perform a backward pass, and update the weights.
