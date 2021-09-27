@@ -14,7 +14,7 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 class Trainer:
     def __init__(self, dataset, num_epochs, network=Unet, batch_size=4, lr=1e-3, n_filter=64, val_split=0.2,
-                 save_dir='./', save_name='model.pth', save_iter=False, load_weights=False, loss='BCEDice',
+                 save_dir='./', save_name='model.pth', save_iter=False, load_weights=False, loss_function='BCEDice',
                  loss_params=(0.5, 0.5)):
         """
         Class for training of neural network. Creates trainer object, training is started with .start().
@@ -43,7 +43,7 @@ class Trainer:
             If True, network state is save after each epoch
         load_weights : str, optional
             If not None, network state is loaded before training
-        loss : str
+        loss_function : str
             Loss function ('BCEDice', 'Tversky' or 'logcoshTversky')
         loss_params : Tuple[float, float]
             Parameter of loss function, depends on chosen loss function
@@ -56,7 +56,7 @@ class Trainer:
         self.lr = lr
         self.best_loss = torch.tensor(float('inf'))
         self.save_iter = save_iter
-        self.loss = loss
+        self.loss_function = loss_function
         self.loss_params = loss_params
         self.n_filter = n_filter
         # split training and validation data
@@ -66,14 +66,14 @@ class Trainer:
         train_data, val_data = random_split(dataset, [num_train, num_val])
         self.train_loader = DataLoader(train_data, batch_size=self.batch_size, pin_memory=True, drop_last=True)
         self.val_loader = DataLoader(val_data, batch_size=self.batch_size, pin_memory=True, drop_last=True)
-        if loss == 'BCEDice':
+        if loss_function == 'BCEDice':
             self.criterion = BCEDiceLoss(loss_params[0], loss_params[1])
-        elif loss == 'Tversky':
+        elif loss_function == 'Tversky':
             self.criterion = TverskyLoss(loss_params[0], loss_params[1])
-        elif loss == 'logcoshTversky':
+        elif loss_function == 'logcoshTversky':
             self.criterion = logcoshTverskyLoss(loss_params[0], loss_params[1])
         else:
-            raise ValueError(f'Loss "{loss}" not defined!')
+            raise ValueError(f'Loss "{loss_function}" not defined!')
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 'min', patience=4, factor=0.1)
         self.save_dir = save_dir
@@ -135,7 +135,7 @@ class Trainer:
                 'state_dict': self.model.state_dict(),
                 'optimizer': self.optimizer.state_dict(),
                 'lr': self.lr,
-                'loss': self.loss,
+                'loss_function': self.loss_function,
                 'loss_params': self.loss_params,
                 'n_filter': self.n_filter,
                 'augmentation': self.data.aug_factor,
