@@ -1,77 +1,91 @@
-import os, glob, re, shutil
-import subprocess
-from sys import platform
-import time
-from numpy.lib.function_base import diff
-import random
+import glob
+import os
+import shutil
 
-import tifffile
 import numpy as np
-from skimage import morphology, transform
-from barbar import Bar
-from tifffile.tifffile import TiffFile
-from tqdm import tqdm as tqdm
-
+import tifffile
 import torch
-from torch import nn as nn, flatten
-from torch.utils.data import Dataset, DataLoader, random_split
-import torch.nn.functional as F
-import torch.optim as optim
 from albumentations import (
     ShiftScaleRotate, GaussNoise,
     RandomBrightnessContrast, Flip, Compose, RandomRotate90)
-from .losses import logcoshDiceLoss, BCEDiceLoss
+from skimage import morphology, transform
+from torch.utils.data import Dataset
 
-from .helpers.util import write_info_file
-from .helpers.__md5sum__ import md5sum, md5sum_folder
-import cv2
 
 class DataProcess(Dataset):
-    def __init__(self, source_dir, file_ext='.tif', dim_out=(256, 256), aug_factor=10, data_path='./data/',
-                 dilate_mask=0, val_split=0.2, invert=False, skeletonize=False, create=True, clip_thres=(0.2, 99.8),
-                 shiftscalerotate=(0, 0, 0), rescale=None):
-        """Processes input images and creates a dataloader for Siam_UNet
+    def __init__(self, source_dir, dim_out=(256, 256), aug_factor=10, data_path='../data/',
+                 dilate_mask=0, dilate_kernel='disk', val_split=0.2, invert=False, skeletonize=False, create=True,
+                 clip_threshold=(0.2, 99.8), shiftscalerotate=(0, 0, 0), noise_amp=10, brightness_contrast=(0.25, 0.25),
+                 rescale=None):
+        """
+        Create training data object for network training
 
-        Args:
-            source_dir (list of 2): [concatenated_image_directory, label_directory]
-            file_ext (str, optional): Defaults to '.tif'. Anything other than '.tif' has not been tested.
-            dim_out (tuple, optional): The dimensions of the final training images. Defaults to (256, 256).
-            aug_factor (int, optional): Augmentation factor. This is how many times each image/label pair is amplified. Defaults to 10.
-            data_path (str, optional): In which directory to save the training images and masks. Defaults to './data/'.
-            dilate_mask (int, optional): Mask dilation factor. Defaults to 0. View the references of `dilate_mask` in this class to understand what this factor does and customize the method of dilation.
-            val_split (float, optional): What proportion of augmented image/label pairs to be used as validation dataset. Defaults to 0.2.
-            invert (bool, optional): Whether to invert the labels. Defaults to False.
-            skeletonize (bool, optional): Whether to skeletonize the labels. Defaults to False.
-            create (bool, optional): Whether to create this dataset. Defaults to True. If set to false, data is loaded from the disk from `data_path` and used directly for the dataloader
-            clip_thres (tuple, optional): Uses numpy.clip() to clip the data in the training image. Defaults to (0.2, 99.8).
-            shiftscalerotate (tuple, optional): Parameter passed albumentation.ShiftScaleRotate(). See documentation fo that function. Usage of this function is not recommended because of bad results. Defaults to (0, 0, 0).
-            rescale (float, optional): Parameter `scale` passed to skimage.transform.rescale() for each image/mask pair. Usage of this function is not recommended because of bad results. Defaults to None.
+        1) Create folder structure for training data
+        2) Move and preprocess training images
+        3) Split input images into tiles
+        4) Augment training data
+        5) Create object of PyTorch Dataset class for training
+
+        Parameters
+        ----------
+        source_dir : Tuple[str, str]
+            Path of training data [images, labels]. Images need to be tif files.
+        dim_out : Tuple[int, int]
+            Resize dimensions of images for training
+        aug_factor : int
+            Factor of image augmentation
+        data_path : str
+            Base path of directories for training data
+        dilate_mask
+            Radius of binary dilation of masks [-2, -1, 0, 1, 2]
+        dilate_kernel : str
+            Dilation kernel ('disk' or 'square')
+        val_split : float
+            Validation split for training
+        invert : bool
+            If True, greyscale binary labels is inverted
+        skeletonize : bool
+            If True, binary labels are skeletonized
+        create : bool, optional
+            If False, existing data set in data_path is used
+        clip_threshold : Tuple[float, float]
+            Clip thresholds for intensity normalization of images
+        shiftscalerotate : [float, float, float]
+            Shift, scale and rotate image during augmentation
+        noise_amp : float
+            Amplitude of Gaussian noise for image augmentation
+        brightness_contrast : Tuple[float, float]
+            Adapt brightness and contrast of images during augmentation
+        rescale : float, optional
+            Rescale all images and labels by factor rescale
         """
         self.source_dir = source_dir
-        self.file_ext = file_ext
         self.create = create
         self.data_path = data_path
         self.dim_out = dim_out
         self.skeletonize = skeletonize
         self.invert = invert
-        self.clip_thres = clip_thres
+        self.clip_threshold = clip_threshold
         self.aug_factor = aug_factor
         self.shiftscalerotate = shiftscalerotate
+        self.brightness_contrast = brightness_contrast
+        self.noise_amp = noise_amp
         self.rescale = rescale
         self.dilate_mask = dilate_mask
+        self.dilate_kernel = dilate_kernel
         self.val_split = val_split
         self.mode = 'train'
 
-        self.make_dirs()
+        self.__make_dirs()
 
         if create:
-            self.move_and_edit()
-            self.merge_images()
-            self.split()
+            self.__move_and_edit()
+            self.__merge_images()
+            self.__split()
             if self.aug_factor is not None:
-                self.augment()
+                self.__augment()
 
-    def make_dirs(self):
+    def __make_dirs(self):
         self.image_path = self.data_path + '/image/'
         self.prev_image_path = self.data_path + '/prev_image/'
         self.mask_path = self.data_path + '/mask/'
@@ -105,16 +119,16 @@ class DataProcess(Dataset):
         os.makedirs(self.prev_image_path, exist_ok=True)
         os.makedirs(self.split_prev_image_path, exist_ok=True)
 
-    def move_and_edit(self):
+    def __move_and_edit(self):
         # create image data
-        files_image = glob.glob(self.source_dir[0] + '*' + self.file_ext)
+        files_image = glob.glob(self.source_dir[0] + '*')
         for file_i in files_image:
             img_i = tifffile.imread(file_i)
             # clip and normalize (0,255)
             img_i_nan = np.copy(img_i).astype('float32')
             img_i_nan[img_i == 0] = np.nan
-            img_i = np.clip(img_i, a_min=np.nanpercentile(img_i_nan, self.clip_thres[0]),
-                            a_max=np.percentile(img_i_nan, self.clip_thres[1]))
+            img_i = np.clip(img_i, a_min=np.nanpercentile(img_i_nan, self.clip_threshold[0]),
+                            a_max=np.percentile(img_i_nan, self.clip_threshold[1]))
             img_i = img_i - np.min(img_i)
             img_i = img_i / np.max(img_i) * 255
             img_i[np.isnan(img_i_nan)] = 0
@@ -124,43 +138,48 @@ class DataProcess(Dataset):
             save_i = os.path.splitext(os.path.basename(file_i))[0]
             save_i = save_i.replace(' ', '_')
             # split the input image into two
-            img_width = int(img_i.shape[1]/2)
-            prev_img = img_i[:, 0:img_width]
-            infer_img = img_i[:, img_width:]
+            img_width = int(img_i.shape[0] / 2)
+            prev_img = img_i[:img_width, :]
+            infer_img = img_i[img_width:, :]
             tifffile.imsave(self.prev_image_path + save_i + '.tif', prev_img)
             tifffile.imsave(self.image_path + save_i + '.tif', infer_img)
 
-    
         # create masks
-        files_mask = glob.glob(self.source_dir[1] + '*' + self.file_ext)
+        files_mask = glob.glob(self.source_dir[1] + '*')
         print('%s files found' % len(files_mask))
         for file_i in files_mask:
-            mask_i = cv2.imread(file_i, cv2.IMREAD_GRAYSCALE)
+            mask_i = tifffile.imread(file_i)
             if self.rescale is not None:
                 mask_i = transform.rescale(mask_i, self.rescale) * 255
                 mask_i[mask_i < 255] = 0
 
-            if mask_i.shape[1] != img_width:
-                print(f"Mask width {mask_i.shape[1]} doesn't match up with image width {img_width}. Have concatenated the input image with its previous frame?")
-                raise IOError # mask width mismatch
+            # if mask_i.shape[0] != img_width:
+            #     raise IOError(f"Mask width {mask_i.shape[0]} doesn't match up with image width {img_width}. "
+            #           f"Have concatenated the input image with its previous frame?")
 
             if self.skeletonize:
                 mask_i[mask_i > 1] = 1
                 mask_i = 1 - mask_i
                 mask_i = morphology.skeletonize(mask_i)
                 mask_i = 255 * (1 - mask_i)
+            if self.dilate_kernel == 'disk':
+                kernel = morphology.disk
+            elif self.dilate_kernel == 'square':
+                kernel = morphology.square
+            else:
+                raise ValueError(f'Dilate kernel {self.dilate_kernel} unknown!')
             if self.dilate_mask > 0:
-                mask_i = morphology.erosion(mask_i, morphology.disk(self.dilate_mask))
+                mask_i = morphology.erosion(mask_i, kernel(self.dilate_mask))
             elif self.dilate_mask < 0:
-                mask_i = morphology.dilation(mask_i, morphology.disk(-self.dilate_mask))
+                mask_i = morphology.dilation(mask_i, kernel(-self.dilate_mask))
             if self.invert:
                 mask_i = 255 - mask_i
             mask_i = mask_i.astype('uint8')
             save_i = os.path.splitext(os.path.basename(file_i))[0]
             save_i = save_i.replace(' ', '_')
-            cv2.imwrite(self.mask_path + save_i + '.tif', mask_i)
+            tifffile.imwrite(self.mask_path + save_i + '.tif', mask_i)
 
-    def merge_images(self):
+    def __merge_images(self):
         self.mask_files = glob.glob(self.data_path + '/mask/*.tif')
         self.image_files = glob.glob(self.data_path + '/image/*.tif')
         self.prev_image_files = glob.glob(self.data_path + '/prev_image/*.tif')
@@ -180,7 +199,7 @@ class DataProcess(Dataset):
             merge = merge.astype('uint8')
             tifffile.imsave(self.merge_path + str(i) + '.tif', merge)
 
-    def split(self):
+    def __split(self):
         self.merges = glob.glob(self.merge_path + '*.tif')
         n = 0
         for i in range(len(self.merges)):
@@ -210,13 +229,14 @@ class DataProcess(Dataset):
                     tifffile.imsave(self.split_prev_image_path + f'{n}.tif', prev_image_ij)
                     n += 1
 
-    def augment(self, p=0.8):
+    def __augment(self, p=0.8):
         aug_pipeline = Compose([
             Flip(),
             RandomRotate90(p=1.0),
             ShiftScaleRotate(self.shiftscalerotate[0], self.shiftscalerotate[1], self.shiftscalerotate[2]),
-            GaussNoise(var_limit=(30, 0), p=0.3),
-            RandomBrightnessContrast(p=0.5),
+            GaussNoise(var_limit=(self.noise_amp, self.noise_amp), p=0.3),
+            RandomBrightnessContrast(brightness_limit=self.brightness_contrast[0],
+                                     contrast_limit=self.brightness_contrast[1], p=0.5),
         ],
             p=p)
 

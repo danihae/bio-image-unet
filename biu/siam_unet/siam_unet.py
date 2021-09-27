@@ -1,8 +1,9 @@
 from torch import nn
 import torch
 
+
 class Siam_UNet(nn.Module):
-    def __init__(self, n_filter=64):
+    def __init__(self, n_filter=32):
         super().__init__()
         # encode
         self.encode1 = self.conv(1, n_filter)

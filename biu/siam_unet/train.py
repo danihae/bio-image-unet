@@ -1,48 +1,53 @@
-import os, glob, re, shutil
-import subprocess
-from sys import platform
-import time
-from numpy.lib.function_base import diff
+import glob
+import os
 import random
 
-import tifffile
-import numpy as np
-from skimage import morphology, transform
-from barbar import Bar
-from tifffile.tifffile import TiffFile
-from tqdm import tqdm as tqdm
-
 import torch
-from torch import nn as nn, flatten
-from torch.utils.data import Dataset, DataLoader, random_split
-import torch.nn.functional as F
 import torch.optim as optim
-from . import losses
+from barbar import Bar
+from biu.siam_unet import BCEDiceLoss
+from torch.utils.data import DataLoader, random_split
 
-from .helpers.util import write_info_file
-from .helpers.__md5sum__ import md5sum, md5sum_folder
-from .siam_unet import Siam_UNet
+from . import losses, logcoshTverskyLoss, TverskyLoss
 from .predict import Predict
+from .siam_unet import Siam_UNet
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 class Trainer:
     def __init__(self, dataset, num_epochs, batch_size=4, lr=1e-3, n_filter=64, val_split=0.2,
-                 save_dir='./', save_name='model.pth', save_iter=False, loss_function=losses.logcoshDiceLoss, load_weights=False):
-        """Trainer for Siam-UNet
+                 save_dir='./', save_name='model.pth', save_iter=False, loss_function='BCEDice',
+                 loss_params=(1, 1), load_weights=False):
+        """
+        Class for training of neural network. Creates trainer object, training is started with .start().
 
-        Args:
-            dataset (DataProcess): data loader for the training dataset
-            num_epochs (int): intended number of epochs to train. A good number for the BCE loss function is 300.
-            batch_size (int, optional): batch size for training. Defaults to 4.
-            lr (float, optional): learning rate. Defaults to 1e-3.
-            n_filter (int, optional): number of filters. Defaults to 64.
-            val_split (float, optional): which proportion of training data to be split into the validation data category. Defaults to 0.2.
-            save_dir (str, optional): where to save the model(s). Defaults to './'.
-            save_name (str, optional): the name of the saved model. Only used when save_iter is false. Defaults to 'model.pth'.
-            save_iter (bool, optional): saves the model at each iteration under the name model_epoch_{iter}.pth. Defaults to False.
-            loss_function: losses.logcoshDiceLoss or losses.BCEDiceLoss. Defaults to losses.logcoshDiceLoss.
+        Parameters
+        ----------
+        dataset
+            Training data, object of PyTorch Dataset class
+        num_epochs : int
+            Number of training epochs
+        batch_size : int
+            Batch size for training
+        lr : float
+            Learning rate
+        n_filter : int
+            Number of convolutional filters in first layer
+        val_split : float
+            Validation split
+        save_dir : str
+            Path of directory to save trained networks
+        save_name : str
+            Base name for saving trained networks
+        save_iter : bool
+            If True, network state is save after each epoch
+        load_weights : str, optional
+            If not None, network state is loaded before training
+        loss_function : str
+            Loss function ('BCEDice', 'Tversky' or 'logcoshTversky')
+        loss_params : Tuple[float, float]
+            Parameter of loss function, depends on chosen loss function
         """
 
         self.model = Siam_UNet(n_filter=n_filter).to(device)
@@ -53,6 +58,8 @@ class Trainer:
         self.lr = lr
         self.best_loss = torch.tensor(float('inf'))
         self.save_iter = save_iter
+        self.loss_function = loss_function
+        self.loss_params = loss_params
         # split training and validation data
         num_val = int(len(dataset) * val_split)
         num_train = len(dataset) - num_val
@@ -60,13 +67,19 @@ class Trainer:
         train_data, val_data = random_split(dataset, [num_train, num_val])
         self.train_loader = DataLoader(train_data, batch_size=self.batch_size, pin_memory=True, drop_last=True)
         self.val_loader = DataLoader(val_data, batch_size=self.batch_size, pin_memory=True, drop_last=True)
-        self.criterion = loss_function(1, 1)
+        if loss_function == 'BCEDice':
+            self.criterion = BCEDiceLoss(loss_params[0], loss_params[1])
+        elif loss_function == 'Tversky':
+            self.criterion = TverskyLoss(loss_params[0], loss_params[1])
+        elif loss_function == 'logcoshTversky':
+            self.criterion = logcoshTverskyLoss(loss_params[0], loss_params[1])
+        else:
+            raise ValueError(f'Loss "{loss_function}" not defined!')
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 'min', patience=4, factor=0.1)
         self.save_dir = save_dir
         os.makedirs(self.save_dir, exist_ok=True)
         self.save_name = save_name
-        write_info_file((save_dir + '/' + save_name) + '.info.txt', f'Mode: Train with Siam_UNet\nOutfile name:{(save_dir + "/" + save_name)}\nDataset folder: {dataset}\nIntended Epochs: {num_epochs}')
 
         if load_weights:
             self.state = torch.load(self.save_dir + '/' + self.save_name)
@@ -84,10 +97,6 @@ class Trainer:
 
                 # Compute and print loss
                 loss = self.criterion(y_pred, y_i)
-
-                if random.random() > 0.99:
-                    print('Mean, min, max', torch.mean(y_i), torch.min(y_i), torch.max(y_i))
-
 
                 # Zero gradients, perform a backward pass, and update the weights.
                 self.optimizer.zero_grad()
@@ -120,7 +129,14 @@ class Trainer:
                 'state_dict': self.model.state_dict(),
                 'optimizer': self.optimizer.state_dict(),
                 'lr': self.lr,
+                'loss': self.loss_function,
+                'loss_params': self.loss_params,
+                'n_filter': self.n_filter,
                 'augmentation': self.data.aug_factor,
+                'clip_threshold': self.data.clip_threshold,
+                'noise_amp': self.data.noise_amp,
+                'brightness_contrast': self.data.brightness_contrast,
+                'shiftscalerotate': self.data.shiftscalerotate,
             }
             with torch.no_grad():
                 val_loss = self.iterate(epoch, 'val')

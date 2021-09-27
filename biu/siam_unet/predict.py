@@ -1,4 +1,5 @@
 import os
+import shutil
 
 import cv2
 import numpy as np
@@ -7,11 +8,10 @@ import torch
 from tifffile.tifffile import TiffFile
 from tqdm import tqdm as tqdm
 
-from .helpers.__md5sum__ import md5sum
-from .helpers.util import write_info_file
 from .siam_unet import Siam_UNet
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+
 
 class Predict:
     """
@@ -61,8 +61,6 @@ class Predict:
         self.result_name = result_name
         self.normalize_result = normalize_result  # todo to be implemented for Siam-U-Net?
 
-        write_info_file(result_name + '.info.txt', f'Mode: Predict with Siam_UNet\nOutfile name: {result_name}\nInput file: {tif_file}\nHash: {md5sum(tif_file)}Model: {model_params}\nModel hash:{md5sum(model_params)}')
-
         # load model
         self.model = Siam_UNet(n_filter=self.n_filter).to(device)
         self.model.load_state_dict(torch.load(model_params)['state_dict'])
@@ -73,15 +71,15 @@ class Predict:
         self.tif_len = len(tif_key.pages)
         self.imgs_shape = [self.tif_len, tif_key.pages[0].shape[0], tif_key.pages[0].shape[1]]
 
+        # create temp folder
         temp_dir = f'temp_{self.tif_file.split("/")[-1]}'
-        # os.system(f"mkdir -p \'{temp_dir}\'")
 
         # taken from split()
         # number of patches in x and y
         self.N_x = int(np.ceil(self.imgs_shape[1] / self.resize_dim[0])) + self.add_tile
         self.N_y = int(np.ceil(self.imgs_shape[2] / self.resize_dim[1])) + self.add_tile
         self.N_per_img = self.N_x * self.N_y
-        self.N = self.N_x * self.N_y   # total number of patches
+        self.N = self.N_x * self.N_y  # total number of patches
 
         # predict each pair, and save the output of each one as a separate image
         os.makedirs(temp_dir, exist_ok=True)
@@ -92,7 +90,7 @@ class Predict:
             else:
                 prev_img = current_img
             current_img = tifffile.imread(self.tif_file, key=i)
-            
+
             img_stack = np.array([prev_img, current_img])
             img_stack = self.preprocess(img_stack)
             patches = self.split(img_stack)
@@ -105,7 +103,8 @@ class Predict:
         print(f'Saving prediction results as {result_name}...')
         tifffile.imwrite(data=tqdm(self.individual_tif_generator(dir=temp_dir), total=self.tif_len, unit='frame'),
                          file=self.result_name, dtype=np.uint8, shape=self.imgs_shape)
-        os.system(f'rm -rf \'{temp_dir}\'')
+        # remove temp folder
+        shutil.rmtree(temp_dir)
 
     def individual_tif_generator(self, dir):
         # a generator that returns each frame in the directory
@@ -156,14 +155,14 @@ class Predict:
 
         # split in resize_dim
         n = 0
-        if self.imgs_shape[0] > 1: # If our input image has more than one frame
+        if self.imgs_shape[0] > 1:  # If our input image has more than one frame
             i = 1
             for j in range(self.N_x):
                 for k in range(self.N_y):
                     patches[n, 0, :, :] = imgs[i][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-                                            self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+                                          self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
                     patches[n, 1, :, :] = imgs[i - 1][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-                                        self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+                                          self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
                     n += 1
         elif self.imgs_shape[0] == 1:
             for j in range(self.N_x):
@@ -182,10 +181,13 @@ class Predict:
                 image_patch_i = patch_i[0, :, :]
                 prev_image_patch_i = patch_i[1, :, :]
 
-                image_patch_i = torch.from_numpy(image_patch_i.astype('float32') / 255).to(device).view((1, 1, self.resize_dim[0], self.resize_dim[1]))
-                prev_image_patch_i = torch.from_numpy(prev_image_patch_i.astype('float32') / 255).to(device).view((1, 1, self.resize_dim[0], self.resize_dim[1]))
+                image_patch_i = torch.from_numpy(image_patch_i.astype('float32') / 255).to(device).view(
+                    (1, 1, self.resize_dim[0], self.resize_dim[1]))
+                prev_image_patch_i = torch.from_numpy(prev_image_patch_i.astype('float32') / 255).to(device).view(
+                    (1, 1, self.resize_dim[0], self.resize_dim[1]))
 
-                res_i = self.model(image_patch_i, prev_image_patch_i).view((1, self.resize_dim[0], self.resize_dim[1])).cpu().numpy() * 255
+                res_i = self.model(image_patch_i, prev_image_patch_i).view(
+                    (1, self.resize_dim[0], self.resize_dim[1])).cpu().numpy() * 255
                 result_patches[i] = res_i.astype('uint8')
                 del patch_i, res_i
         return result_patches
@@ -197,10 +199,10 @@ class Predict:
         i = 0
         if self.imgs_shape[0] > 1:  # if stack
             stack_result_i = np.zeros((self.N_per_img, np.max((self.resize_dim[0], self.imgs_shape[1])),
-                                        np.max((self.resize_dim[1], self.imgs_shape[2]))), dtype='uint8') * np.nan
+                                       np.max((self.resize_dim[1], self.imgs_shape[2]))), dtype='uint8') * np.nan
         elif self.imgs_shape[0] == 1:  # if only one image
             stack_result_i = np.zeros((self.N_per_img, np.max((self.resize_dim[0], self.imgs_shape[1])),
-                                        np.max((self.resize_dim[1], self.imgs_shape[2]))), dtype='uint8') * np.nan
+                                       np.max((self.resize_dim[1], self.imgs_shape[2]))), dtype='uint8') * np.nan
         n = 0
         for j in range(self.N_x):
             for k in range(self.N_y):

@@ -14,6 +14,7 @@ class BCEDiceLoss(nn.Module):
     def forward(self, logits, targets):
         return self.alpha * self.bce(logits, targets) + self.beta * self.dice(logits, targets)
 
+
 class logcoshDiceLoss(nn.Module):
     def __init__(self, alpha, beta):
         super(logcoshDiceLoss, self).__init__()
@@ -24,6 +25,7 @@ class logcoshDiceLoss(nn.Module):
     def forward(self, logits, targets):
         x = self.dice(logits, targets)
         return torch.log((torch.exp(x) + torch.exp(-x)) / 2)
+
 
 class BCELoss2d(nn.Module):
     def __init__(self, weight=None, size_average=True, **kwargs):
@@ -52,3 +54,47 @@ class SoftDiceLoss(nn.Module):
         score = 2. * (intersection.sum(1) + self.smooth) / (m1.sum(1) + m2.sum(1) + self.smooth)
         score = 1 - score.sum() / num
         return score
+
+
+class TverskyLoss(nn.Module):
+    def __init__(self, alpha=0.5, beta=0.5, smooth=1):
+        super(TverskyLoss, self).__init__()
+        self.alpha = alpha
+        self.beta = beta
+        self.smooth = smooth
+
+    def forward(self, inputs, targets):
+        inputs = torch.sigmoid(inputs)
+        inputs = inputs.view(-1)
+        targets = targets.view(-1)
+
+        # True Positives, False Positives & False Negatives
+        TP = (inputs * targets).sum()
+        FP = ((1 - targets) * inputs).sum()
+        FN = (targets * (1 - inputs)).sum()
+
+        Tversky = (TP + self.smooth) / (TP + self.alpha * FP + self.beta * FN + self.smooth)
+
+        return 1 - Tversky
+
+
+class logcoshTverskyLoss(nn.Module):
+    def __init__(self, alpha=0.5, beta=0.5, smooth=1):
+        super(logcoshTverskyLoss, self).__init__()
+        self.alpha = alpha
+        self.beta = beta
+        self.smooth = smooth
+
+    def forward(self, inputs, targets):
+        inputs = torch.sigmoid(inputs)
+        inputs = inputs.view(-1)
+        targets = targets.view(-1)
+
+        # True Positives, False Positives & False Negatives
+        TP = (inputs * targets).sum()
+        FP = ((1 - targets) * inputs).sum()
+        FN = (targets * (1 - inputs)).sum()
+
+        Tversky = (TP + self.smooth) / (TP + self.alpha * FP + self.beta * FN + self.smooth)
+
+        return torch.log(torch.cosh(1 - Tversky))
