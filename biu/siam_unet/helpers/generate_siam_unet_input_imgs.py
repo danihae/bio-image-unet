@@ -8,7 +8,7 @@ def generate_coupled_image(movie, frame, output):
     """
     Generates an image from the previous frame of the given frame and the given frame of the given movie. Should be used as input to Siam_UNet. The output image is a tiff file with the files like this, with the output image of twice the width of the input.
     [    Previous   |     Frame to be    ]
-    [     Frame     |       Inferred     ]
+    [     Frame     |   Inferred From    ]
 
     Note on arg: 
         frame (int): 0-indexed
@@ -25,6 +25,19 @@ def generate_coupled_image(movie, frame, output):
         raise IOError   # tiff file not found
 
     out = np.concatenate((prev_frame, curr_frame), axis=1).astype(np.uint8)
+    cv2.imwrite(filename=output, img=out, )
+
+def generate_coupled_image_from_self(img, output_img):
+    """
+        Generates an input image for siam by concatenating an image with itself 
+    """
+
+    curr_frame = tifffile.imread(img)
+
+    if curr_frame is None:
+        raise IOError   # tiff file not found
+
+    out = np.concatenate((curr_frame, curr_frame), axis=1).astype(np.uint8)
     cv2.imwrite(filename=output, img=out, )
 
 def utilize_search_result(search_result_mr_txt, movie_path_prefix, labels_path_prefix, output_folder):

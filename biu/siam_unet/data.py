@@ -156,6 +156,9 @@ class DataProcess(Dataset):
             # if mask_i.shape[0] != img_width:
             #     raise IOError(f"Mask width {mask_i.shape[0]} doesn't match up with image width {img_width}. "
             #           f"Have concatenated the input image with its previous frame?")
+            # if mask_i.shape[1] != img_width:
+            #     print(f"Mask width {mask_i.shape[1]} for {file_i} doesn't match up with image width {img_width}. Have concatenated the input image with its previous frame?")
+            #     raise IOError # mask width mismatch
 
             if self.skeletonize:
                 mask_i[mask_i > 1] = 1
