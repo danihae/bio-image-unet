@@ -53,7 +53,6 @@ class Siam_UNet(nn.Module):
         self.decode9 = self.conv(1 * n_filter, 1)
         self.final = nn.Sequential(
             nn.Conv2d(1, 1, kernel_size=1, padding=0),
-            nn.Sigmoid(),
         )
 
     def conv(self, in_channels, out_channels, kernel_size=3, dropout=0.0):
@@ -125,5 +124,5 @@ class Siam_UNet(nn.Module):
         d7 = self.decode7(c4)
         d8 = self.decode8(d7)
         d9 = self.decode9(d8)
-        out = self.final(d9)
-        return out
+        logits = self.final(d9)
+        return torch.sigmoid(logits), logits
