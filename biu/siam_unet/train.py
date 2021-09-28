@@ -58,6 +58,7 @@ class Trainer:
         self.lr = lr
         self.best_loss = torch.tensor(float('inf'))
         self.save_iter = save_iter
+        self.n_filter = n_filter
         self.loss_function = loss_function
         self.loss_params = loss_params
         # split training and validation data
@@ -112,9 +113,12 @@ class Trainer:
                     prev_x_i = batch_i['prev_image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                     y_i = batch_i['mask'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                     # Forward pass: Compute predicted y by passing x to the model
-                    y_pred = self.model(x_i, prev_x_i)
-                    loss = self.criterion(y_pred, y_i)
-                    loss_list.append(loss.detach())
+                    y_pred, y_logits = self.model(x_i, prev_x_i)
+                    
+                    # Compute and print loss
+                    loss = self.criterion(y_logits, y_i)
+
+                loss_list.append(loss.detach())
             val_loss = torch.stack(loss_list).mean()
             return val_loss
 
