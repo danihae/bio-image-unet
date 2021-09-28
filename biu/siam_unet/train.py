@@ -1,5 +1,6 @@
 import glob
 import os
+import random
 
 import torch
 import torch.optim as optim
@@ -55,9 +56,9 @@ class Trainer:
         self.num_epochs = num_epochs
         self.batch_size = batch_size
         self.lr = lr
-        self.n_filter = n_filter
         self.best_loss = torch.tensor(float('inf'))
         self.save_iter = save_iter
+        self.n_filter = n_filter
         self.loss_function = loss_function
         self.loss_params = loss_params
         # split training and validation data
@@ -113,8 +114,11 @@ class Trainer:
                     y_i = batch_i['mask'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                     # Forward pass: Compute predicted y by passing x to the model
                     y_pred, y_logits = self.model(x_i, prev_x_i)
+
+                    # Compute and print loss
                     loss = self.criterion(y_logits, y_i)
-                    loss_list.append(loss.detach())
+
+                loss_list.append(loss.detach())
             val_loss = torch.stack(loss_list).mean()
             return val_loss
 
