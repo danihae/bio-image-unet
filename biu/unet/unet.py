@@ -76,10 +76,10 @@ class Unet(nn.Module):
         m2 = self.maxpool2(e4)
         e5 = self.encode5(m2)
         e6 = self.encode6(e5)
-        m3 = self.maxpool2(e6)
+        m3 = self.maxpool3(e6)
         e7 = self.encode7(m3)
         e8 = self.encode8(e7)
-        m4 = self.maxpool2(e8)
+        m4 = self.maxpool4(e8)
 
         mid1 = self.middle_conv1(m4)
         mid2 = self.middle_conv2(mid1)
