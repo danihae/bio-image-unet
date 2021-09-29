@@ -1,7 +1,10 @@
-from torch import nn
 import torch
+from torch import nn
+import torch.nn.functional as F
+
 
 class Siam_UNet(nn.Module):
+    """Implementation of Siamese U-Net following Dunnhofer et al. https://doi.org/10.1016/j.media.2019.101631"""
     def __init__(self, n_filter=32, bias=0):
         super().__init__()
         # encode
@@ -18,22 +21,8 @@ class Siam_UNet(nn.Module):
         self.encode8 = self.conv(8 * n_filter, 8 * n_filter, dropout=0.5)
         self.maxpool4 = nn.MaxPool2d(kernel_size=2, stride=2)
 
-        # mirrored encoders
-        self.mirroredencode1 = self.conv(1, n_filter)
-        self.mirroredencode2 = self.conv(n_filter, n_filter)
-        self.mirroredmaxpool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.mirroredencode3 = self.conv(n_filter, 2 * n_filter)
-        self.mirroredencode4 = self.conv(2 * n_filter, 2 * n_filter)
-        self.mirroredmaxpool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.mirroredencode5 = self.conv(2 * n_filter, 4 * n_filter)
-        self.mirroredencode6 = self.conv(4 * n_filter, 4 * n_filter)
-        self.mirroredmaxpool3 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.mirroredencode7 = self.conv(4 * n_filter, 8 * n_filter)
-        self.mirroredencode8 = self.conv(8 * n_filter, 8 * n_filter, dropout=0.5)
-        self.mirroredmaxpool4 = nn.MaxPool2d(kernel_size=2, stride=2)
-
         # middle
-        self.middle_conv1 = self.conv(16 * n_filter, 16 * n_filter)
+        self.middle_conv1 = self.conv(8 * n_filter, 16 * n_filter)
         self.middle_conv2 = self.conv(16 * n_filter, 16 * n_filter, dropout=0.5)
 
         # decode
@@ -70,10 +59,18 @@ class Siam_UNet(nn.Module):
             print(x1.shape, x2.shape)
             raise ValueError('concatenation failed: wrong dimensions')
 
+    def depthwise_xcorr(self, embed_curr, embed_prev):
+        """depth-wise cross correlation"""
+        batch = embed_prev.size(0)
+        channel = embed_prev.size(1)
+        embed_curr = embed_curr.view(1, batch * channel, embed_curr.size(2), embed_curr.size(3))
+        embed_prev = embed_prev.view(batch * channel, 1, embed_prev.size(2), embed_prev.size(3))
+        out = F.conv2d(embed_curr, embed_prev, groups=batch * channel, padding='same')
+        out = out.view(batch, channel, out.size(2), out.size(3))
+        return out
+
     def forward(self, x, prev_x):
-        ### inputs: x = the frame we are interested in
-        # prev_x = the previous frame
-        # top encoder
+        # top encoder (current frame)
         e1 = self.encode1(x)
         e2 = self.encode2(e1)
         m1 = self.maxpool1(e2)
@@ -87,25 +84,27 @@ class Siam_UNet(nn.Module):
         e8 = self.encode8(e7)
         m4 = self.maxpool2(e8)
 
-        # bottom encoder
-        me1 = self.mirroredencode1(prev_x)
-        me2 = self.mirroredencode2(me1)
-        mm1 = self.mirroredmaxpool1(me2)
-        me3 = self.mirroredencode3(mm1)
-        me4 = self.mirroredencode4(me3)
-        mm2 = self.mirroredmaxpool2(me4)
-        me5 = self.mirroredencode5(mm2)
-        me6 = self.mirroredencode6(me5)
-        mm3 = self.mirroredmaxpool2(me6)
-        me7 = self.mirroredencode7(mm3)
-        me8 = self.mirroredencode8(me7)
-        mm4 = self.mirroredmaxpool2(me8)
+        # bottom encoder (previous frame)
+        me1 = self.encode1(prev_x)
+        me2 = self.encode2(me1)
+        mm1 = self.maxpool1(me2)
+        me3 = self.encode3(mm1)
+        me4 = self.encode4(me3)
+        mm2 = self.maxpool2(me4)
+        me5 = self.encode5(mm2)
+        me6 = self.encode6(me5)
+        mm3 = self.maxpool2(me6)
+        me7 = self.encode7(mm3)
+        me8 = self.encode8(me7)
+        mm4 = self.maxpool2(me8)
 
-        # middle layer
-        mid0 = self.concat(m4, mm4)
-        mid1 = self.middle_conv1(mid0)
+        # depth-wise cross-correlation
+        corr = self.depthwise_xcorr(m4, mm4)
+        # mid layer
+        mid1 = self.middle_conv1(corr)
         mid2 = self.middle_conv2(mid1)
 
+        # decoder
         u1 = self.up1(mid2)
         c1 = self.concat(u1, e7)
         d1 = self.decode1(c1)

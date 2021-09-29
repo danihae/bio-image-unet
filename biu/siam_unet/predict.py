@@ -193,9 +193,6 @@ class Predict:
         return result_patches
 
     def stitch(self, result_patches):
-        # create array
-        imgs_result = np.zeros((self.imgs_shape[0], np.max((self.resize_dim[0], self.imgs_shape[1]))
-                                , np.max((self.resize_dim[1], self.imgs_shape[2]))), dtype='uint8')
         i = 0
         if self.imgs_shape[0] > 1:  # if stack
             stack_result_i = np.zeros((self.N_per_img, np.max((self.resize_dim[0], self.imgs_shape[1])),
@@ -216,25 +213,3 @@ class Predict:
         imgs_result = imgs_result[:self.imgs_shape[1], :self.imgs_shape[2]]
 
         return imgs_result
-
-    def save_as_tif(self, imgs, filename, normalize=False):  # todo use normalization part, else remove function?
-        """
-        Save numpy array as tif file
-
-        Parameters
-        ----------
-        imgs : np.array
-            Data array
-        filename : str
-            Filepath to save result
-        normalize : bool
-            If true, data is normalized [0, 255]
-        """
-        if normalize:
-            imgs = imgs.astype('float32')
-            imgs = imgs - np.nanmin(imgs)
-            imgs /= np.nanmax(imgs)
-            imgs *= 255
-        imgs = imgs.astype('uint8')
-        tifffile.imsave(filename, imgs)
-        print('Saving prediction results as %s' % filename)
