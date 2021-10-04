@@ -138,12 +138,16 @@ class DataProcess(Dataset):
             save_i = os.path.splitext(os.path.basename(file_i))[0]
             save_i = save_i.replace(' ', '_')
             # split the input image into two
-            # img_width = int(img_i.shape[0] / 2)
-            # prev_img = img_i[:img_width, :]
-            # infer_img = img_i[img_width:, :]
-            img_width = int(img_i.shape[1] / 2)
-            prev_img = img_i[:, :img_width]
-            infer_img = img_i[:, img_width:]
+            # if the previous image and currently image are concatenated horizontally
+            if len(img_i.shape) == 2: 
+                img_width = int(img_i.shape[1] / 2)
+                prev_img = img_i[:, :img_width]
+                infer_img = img_i[:, img_width:]
+            # if the previous image image is stacked as another layer
+            else:
+                img_width = int(img_i.shape[0] / 2)
+                prev_img = img_i[:, :img_width]
+                infer_img = img_i[:, img_width:]                
             tifffile.imsave(self.prev_image_path + save_i + '.tif', prev_img)
             tifffile.imsave(self.image_path + save_i + '.tif', infer_img)
 
