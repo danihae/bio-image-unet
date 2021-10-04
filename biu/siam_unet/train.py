@@ -5,10 +5,9 @@ import random
 import torch
 import torch.optim as optim
 from barbar import Bar
-from biu.siam_unet import BCEDiceLoss
 from torch.utils.data import DataLoader, random_split
 
-from . import losses, logcoshTverskyLoss, TverskyLoss
+from . import logcoshTverskyLoss, TverskyLoss, BCEDiceLoss
 from .predict import Predict
 from .siam_unet import Siam_UNet
 
@@ -16,7 +15,7 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 class Trainer:
-    def __init__(self, dataset, num_epochs, batch_size=4, lr=1e-3, n_filter=64, val_split=0.2,
+    def __init__(self, dataset, num_epochs, batch_size=4, lr=1e-3, n_filter=32, val_split=0.2,
                  save_dir='./', save_name='model.pth', save_iter=False, loss_function='BCEDice',
                  loss_params=(1, 1), load_weights=False):
         """
@@ -114,7 +113,7 @@ class Trainer:
                     y_i = batch_i['mask'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                     # Forward pass: Compute predicted y by passing x to the model
                     y_pred, y_logits = self.model(x_i, prev_x_i)
-                    
+
                     # Compute and print loss
                     loss = self.criterion(y_logits, y_i)
 
@@ -124,7 +123,7 @@ class Trainer:
 
         torch.cuda.empty_cache()
 
-    def start(self, test_data_path=None, result_path=None):
+    def start(self, test_data_path=None, result_path=None, test_resize_dim=(512, 512)):
         for epoch in range(self.num_epochs):
             self.iterate(epoch, 'train')
             self.state = {
@@ -154,8 +153,10 @@ class Trainer:
                 torch.save(self.state, self.save_dir + '/' + f'model_epoch_{epoch}.pth')
 
             if test_data_path is not None:
+                print('Predicting test data...')
                 files = glob.glob(test_data_path + '*.tif')
                 for i, file in enumerate(files):
-                    Predict(file, result_path + os.path.basename(file) + f'epoch_{epoch}.tif', self.save_dir + '/' +
-                            f'model_epoch_{epoch}.pth', resize_dim=(512, 512), invert=False)
+                    Predict(file, result_path + os.path.basename(file) + f'epoch_{epoch}.tif',
+                            self.save_dir + '/' + f'model_epoch_{epoch}.pth', resize_dim=test_resize_dim,
+                            invert=False, n_filter=self.n_filter)
 
