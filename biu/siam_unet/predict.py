@@ -186,7 +186,7 @@ class Predict:
                 prev_image_patch_i = torch.from_numpy(prev_image_patch_i.astype('float32') / 255).to(device).view(
                     (1, 1, self.resize_dim[0], self.resize_dim[1]))
 
-                res_i = self.model(image_patch_i, prev_image_patch_i).view(
+                res_i = self.model(image_patch_i, prev_image_patch_i)[0].view(
                     (1, self.resize_dim[0], self.resize_dim[1])).cpu().numpy() * 255
                 result_patches[i] = res_i.astype('uint8')
                 del patch_i, res_i
