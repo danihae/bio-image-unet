@@ -1,6 +1,5 @@
 import glob
 import os
-import random
 
 import torch
 import torch.optim as optim
@@ -56,6 +55,7 @@ class Trainer:
         self.num_epochs = num_epochs
         self.batch_size = batch_size
         self.lr = lr
+        self.n_filter = n_filter
         self.best_loss = torch.tensor(float('inf'))
         self.save_iter = save_iter
         self.loss_function = loss_function
@@ -112,15 +112,15 @@ class Trainer:
                     prev_x_i = batch_i['prev_image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                     y_i = batch_i['mask'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                     # Forward pass: Compute predicted y by passing x to the model
-                    y_pred = self.model(x_i, prev_x_i)
-                    loss = self.criterion(y_pred, y_i)
+                    y_pred, y_logits = self.model(x_i, prev_x_i)
+                    loss = self.criterion(y_logits, y_i)
                     loss_list.append(loss.detach())
             val_loss = torch.stack(loss_list).mean()
             return val_loss
 
         torch.cuda.empty_cache()
 
-    def start(self, test_data_path=None, result_path=None):
+    def start(self, test_data_path=None, result_path=None, test_resize_dim=(512, 512)):
         for epoch in range(self.num_epochs):
             self.iterate(epoch, 'train')
             self.state = {
@@ -153,5 +153,5 @@ class Trainer:
                 files = glob.glob(test_data_path + '*.tif')
                 for i, file in enumerate(files):
                     Predict(file, result_path + os.path.basename(file) + f'epoch_{epoch}.tif', self.save_dir + '/' +
-                            f'model_epoch_{epoch}.pth', resize_dim=(512, 512), invert=False)
+                            f'model_epoch_{epoch}.pth', resize_dim=test_resize_dim, invert=False)
 
