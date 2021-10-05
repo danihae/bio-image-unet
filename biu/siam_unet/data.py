@@ -139,15 +139,16 @@ class DataProcess(Dataset):
             save_i = save_i.replace(' ', '_')
             # split the input image into two
             # if the previous image and currently image are concatenated horizontally
-            if len(img_i.shape) == 2: 
+            if len(img_i.shape) == 2:
                 img_width = int(img_i.shape[1] / 2)
                 prev_img = img_i[:, :img_width]
                 infer_img = img_i[:, img_width:]
             # if the previous image image is stacked as another layer
+            elif len(img_i.shape) == 3:
+                prev_img = img_i[0]
+                infer_img = img_i[1]
             else:
-                img_width = int(img_i.shape[0] / 2)
-                prev_img = img_i[:, :img_width]
-                infer_img = img_i[:, img_width:]                
+                raise ValueError('Unknown data structure of input images.')
             tifffile.imsave(self.prev_image_path + save_i + '.tif', prev_img)
             tifffile.imsave(self.image_path + save_i + '.tif', infer_img)
 
