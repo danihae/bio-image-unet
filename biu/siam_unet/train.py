@@ -1,13 +1,13 @@
 import glob
 import os
-import random
 
 import torch
 import torch.optim as optim
 from barbar import Bar
+from biu.siam_unet import BCEDiceLoss
 from torch.utils.data import DataLoader, random_split
 
-from . import logcoshTverskyLoss, TverskyLoss, BCEDiceLoss
+from . import losses, logcoshTverskyLoss, TverskyLoss
 from .predict import Predict
 from .siam_unet import Siam_UNet
 
@@ -55,9 +55,9 @@ class Trainer:
         self.num_epochs = num_epochs
         self.batch_size = batch_size
         self.lr = lr
+        self.n_filter = n_filter
         self.best_loss = torch.tensor(float('inf'))
         self.save_iter = save_iter
-        self.n_filter = n_filter
         self.loss_function = loss_function
         self.loss_params = loss_params
         # split training and validation data
@@ -94,10 +94,8 @@ class Trainer:
                 y_i = batch_i['mask'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                 # Forward pass: Compute predicted y by passing x to the model
                 y_pred, y_logits = self.model(x_i, prev_x_i)
-
-                # Compute and print loss
+                # Compute loss
                 loss = self.criterion(y_logits, y_i)
-
                 # Zero gradients, perform a backward pass, and update the weights.
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -113,11 +111,9 @@ class Trainer:
                     y_i = batch_i['mask'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                     # Forward pass: Compute predicted y by passing x to the model
                     y_pred, y_logits = self.model(x_i, prev_x_i)
-
-                    # Compute and print loss
+                    # Compute loss
                     loss = self.criterion(y_logits, y_i)
-
-                loss_list.append(loss.detach())
+                    loss_list.append(loss.detach())
             val_loss = torch.stack(loss_list).mean()
             return val_loss
 
@@ -153,7 +149,6 @@ class Trainer:
                 torch.save(self.state, self.save_dir + '/' + f'model_epoch_{epoch}.pth')
 
             if test_data_path is not None:
-                print('Predicting test data...')
                 files = glob.glob(test_data_path + '*.tif')
                 for i, file in enumerate(files):
                     Predict(file, result_path + os.path.basename(file) + f'epoch_{epoch}.tif',
