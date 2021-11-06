@@ -20,6 +20,8 @@ opencv-python ="^4.5.2"
 tqdm = "^4.61.2"
 numpy = "^1.19.5"
 scikit-image = "^0.18.2"
+imagecodecs = "*"
+packaging = "*"
 
 [tool.poetry.dev-dependencies]
 

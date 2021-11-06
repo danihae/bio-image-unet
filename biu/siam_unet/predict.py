@@ -59,6 +59,8 @@ class Predict:
         self.invert = invert
         self.clip_threshold = clip_threshold
         self.result_name = result_name
+        if '/' in str(result_name): # make directory if not exist
+            os.makedirs(str(result_name)[:str(result_name).rfind('/')], exist_ok=True)
         self.normalize_result = normalize_result  # todo to be implemented for Siam-U-Net?
 
         # load model
@@ -86,7 +88,10 @@ class Predict:
         print('Predicting data ...')
         for i in tqdm(range(self.tif_len), unit='frame'):
             if i == 0:
-                prev_img = tifffile.imread(self.tif_file, key=1)
+                if self.tif_len == 1:
+                    prev_img = tifffile.imread(self.tif_file, key=0)
+                else:
+                    prev_img = tifffile.imread(self.tif_file, key=1)
             else:
                 prev_img = current_img
             current_img = tifffile.imread(self.tif_file, key=i)
@@ -155,23 +160,32 @@ class Predict:
 
         # split in resize_dim
         n = 0
-        if self.imgs_shape[0] > 1:  # If our input image has more than one frame
-            i = 1
-            for j in range(self.N_x):
-                for k in range(self.N_y):
-                    patches[n, 0, :, :] = imgs[i][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-                                          self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
-                    patches[n, 1, :, :] = imgs[i - 1][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-                                          self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
-                    n += 1
-        elif self.imgs_shape[0] == 1:
-            for j in range(self.N_x):
-                for k in range(self.N_y):
-                    patches[n, 0, :, :] = imgs[self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-                                          self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
-                    patches[n, 1, :, :] = imgs[self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-                                          self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
-                    n += 1
+
+        i = 1
+        for j in range(self.N_x):
+            for k in range(self.N_y):
+                patches[n, 0, :, :] = imgs[i][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
+                                        self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+                patches[n, 1, :, :] = imgs[i - 1][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
+                                        self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+                n += 1
+        # if self.imgs_shape[0] > 1:  # If our input image has more than one frame
+        #     i = 1
+        #     for j in range(self.N_x):
+        #         for k in range(self.N_y):
+        #             patches[n, 0, :, :] = imgs[i][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
+        #                                   self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+        #             patches[n, 1, :, :] = imgs[i - 1][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
+        #                                   self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+        #             n += 1
+        # elif self.imgs_shape[0] == 1:
+        #     for j in range(self.N_x):
+        #         for k in range(self.N_y):
+        #             patches[n, 0, :, :] = imgs[self.X_start[j]:self.X_start[j] + self.resize_dim[0],
+        #                                   self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+        #             patches[n, 1, :, :] = imgs[self.X_start[j]:self.X_start[j] + self.resize_dim[0],
+        #                                   self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+        #             n += 1
         return patches
 
     def predict(self, patches):
