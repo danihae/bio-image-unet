@@ -1,6 +1,7 @@
 import glob
 import os
 import shutil
+import logging
 
 import numpy as np
 import tifffile
@@ -154,7 +155,7 @@ class DataProcess(Dataset):
 
         # create masks
         files_mask = glob.glob(self.source_dir[1] + '*')
-        print('%s files found' % len(files_mask))
+        logging.info('%s files found' % len(files_mask))
         for file_i in files_mask:
             mask_i = tifffile.imread(file_i)
             if self.rescale is not None:
@@ -272,7 +273,7 @@ class DataProcess(Dataset):
                 tifffile.imsave(self.aug_mask_path + f'{k}.tif', masks_aug_i[j])
                 tifffile.imsave(self.aug_prev_image_path + f'{k}.tif', prev_image_aug_i[j])
                 k += 1
-        print(f'Number of training images: {k}')
+        logging.info(f'Number of training images: {k}')
 
     def __len__(self):
         if self.aug_factor is not None:

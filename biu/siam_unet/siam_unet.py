@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
+import logging
 
 
 class Siam_UNet(nn.Module):
@@ -56,7 +57,8 @@ class Siam_UNet(nn.Module):
         if x1.shape == x2.shape:
             return torch.cat((x1, x2), 1)
         else:
-            print(x1.shape, x2.shape)
+            # logging.critical(x1.shape, x2.shape)
+            logging.critical(f"Shapes: {x1.shape}, {x2.shape}")
             raise ValueError('concatenation failed: wrong dimensions')
 
     def depthwise_xcorr(self, embed_curr, embed_prev):

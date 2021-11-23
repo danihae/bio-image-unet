@@ -1,5 +1,6 @@
 import glob
 import os
+import logging
 
 import torch
 import torch.optim as optim
@@ -87,7 +88,7 @@ class Trainer:
 
     def iterate(self, epoch, mode):
         if mode == 'train':
-            print('\nStarting training epoch %s ...' % epoch)
+            logging.info('\nStarting training epoch %s ...' % epoch)
             for i, batch_i in enumerate(Bar(self.train_loader)):
                 x_i = batch_i['image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                 prev_x_i = batch_i['prev_image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
@@ -103,7 +104,7 @@ class Trainer:
 
         elif mode == 'val':
             loss_list = []
-            print('\nStarting validation epoch %s ...' % epoch)
+            logging.info('\nStarting validation epoch %s ...' % epoch)
             with torch.no_grad():
                 for i, batch_i in enumerate(Bar(self.val_loader)):
                     x_i = batch_i['image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
@@ -141,7 +142,7 @@ class Trainer:
                 val_loss = self.iterate(epoch, 'val')
                 self.scheduler.step(val_loss)
             if val_loss < self.best_loss:
-                print('\nValidation loss improved from %s to %s - saving model state' % (
+                logging.info('\nValidation loss improved from %s to %s - saving model state' % (
                     round(self.best_loss.item(), 5), round(val_loss.item(), 5)))
                 self.state['best_loss'] = self.best_loss = val_loss
                 torch.save(self.state, self.save_dir + '/' + self.save_name)

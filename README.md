@@ -17,3 +17,16 @@ Install from [PyPI](https://pypi.org/project/bio-image-unet/): `pip install bio-
 ### Documentation
 
 TBD
+
+## TODO
+
+### Before publication time
+Download some open dataset for tissue segmentation on the Internet and include it with our package. 
+
+### Testing plan 1
+Generate test dataset.
+One image from each project.
+Run test dataset.
+
+### Testing plan 2
+Just run model for all the images in their respective dataset.

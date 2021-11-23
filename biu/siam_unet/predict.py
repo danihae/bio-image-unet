@@ -1,5 +1,6 @@
 import os
 import shutil
+import logging
 
 import cv2
 import numpy as np
@@ -85,7 +86,7 @@ class Predict:
 
         # predict each pair, and save the output of each one as a separate image
         os.makedirs(temp_dir, exist_ok=True)
-        print('Predicting data ...')
+        logging.info('Predicting data ...')
         for i in tqdm(range(self.tif_len), unit='frame'):
             if i == 0:
                 if self.tif_len == 1:
@@ -99,13 +100,13 @@ class Predict:
             img_stack = np.array([prev_img, current_img])
             img_stack = self.preprocess(img_stack)
             patches = self.split(img_stack)
-            _ = print(f'Patches shape:{patches.shape}') if i == 0 else None
+            _ = logging.info(f'Patches shape:{patches.shape}') if i == 0 else None
             result_patches = self.predict(patches)
             imgs_result = self.stitch(result_patches)
             cv2.imwrite(filename=f'{temp_dir}/{i}.tif', img=imgs_result.astype('uint8'), )
 
         # merge the images and save as tif file
-        print(f'Saving prediction results as {result_name}...')
+        logging.info(f'Saving prediction results as {result_name}...')
         tifffile.imwrite(data=tqdm(self.individual_tif_generator(dir=temp_dir), total=self.tif_len, unit='frame'),
                          file=self.result_name, dtype=np.uint8, shape=self.imgs_shape)
         # remove temp folder
