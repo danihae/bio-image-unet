@@ -30,3 +30,11 @@ Run test dataset.
 
 ### Testing plan 2
 Just run model for all the images in their respective dataset.
+
+### Ideas for fixing the translational variance 
+
+Adapted from [https://arxiv.org/abs/1805.12219]
+
+1. The source of translational variance is in either zero padding or non-unary stride max pooling. We can try to remove either one of those.
+
+2. A crazy modification to the network at inference time. Change the input size at inference time. Since the network is fully convolutional, this same network will work. 

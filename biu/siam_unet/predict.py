@@ -43,7 +43,7 @@ class Predict:
         n_filter : int
             Number of convolution filters
         resize_dim
-            Image dimensions for resizing for prediction
+            Image dimensions for resizing for prediction. If resize_dim=None, the image will not be resized but rather the whole image will be processed by the convolution layers.
         invert : bool
             Invert greyscale of image(s) before prediction
         clip_threshold : Tuple[float, float]
@@ -54,7 +54,6 @@ class Predict:
             If True, results are normalized to [0, 255]
         """
         self.tif_file = tif_file
-        self.resize_dim = resize_dim
         self.add_tile = add_tile
         self.n_filter = n_filter
         self.invert = invert
@@ -73,6 +72,10 @@ class Predict:
         tif_key = TiffFile(self.tif_file)
         self.tif_len = len(tif_key.pages)
         self.imgs_shape = [self.tif_len, tif_key.pages[0].shape[0], tif_key.pages[0].shape[1]]
+        if resize_dim is not None:
+            self.resize_dim = resize_dim
+        else:
+            self.resize_dim = (self.imgs_shape[1], self.imgs_shape[2])
 
         # create temp folder
         temp_dir = f'temp_{self.tif_file.split("/")[-1]}'
