@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader, random_split
 from .losses import *
 from .predict import Predict
 from .unet import Unet
+from .baby_unet import BabyUnet
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
