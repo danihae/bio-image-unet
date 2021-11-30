@@ -5,7 +5,7 @@ packages = [
 ]
 version = "0.3.0"
 description = "Implementations of U-Net and Siam U-Net for biological image segmentation"
-authors = ["Yuxi Long <longyuxi@live.com>", "Daniel Haertter <dani.hae@posteo.de>"]
+authors = ["Daniel Haertter <dani.hae@posteo.de>", "Yuxi Long <longyuxi@live.com>"]
 readme = "README.md"
 license = "MIT"
 
@@ -20,6 +20,8 @@ opencv-python ="^4.5.2"
 tqdm = "^4.61.2"
 numpy = "^1.19.5"
 scikit-image = "^0.18.2"
+imagecodecs = "*"
+packaging = "*"
 
 [tool.poetry.dev-dependencies]
 

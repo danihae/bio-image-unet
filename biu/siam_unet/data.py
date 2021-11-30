@@ -1,6 +1,7 @@
 import glob
 import os
 import shutil
+import logging
 
 import numpy as np
 import tifffile
@@ -138,15 +139,23 @@ class DataProcess(Dataset):
             save_i = os.path.splitext(os.path.basename(file_i))[0]
             save_i = save_i.replace(' ', '_')
             # split the input image into two
-            img_width = int(img_i.shape[0] / 2)
-            prev_img = img_i[:img_width, :]
-            infer_img = img_i[img_width:, :]
+            # if the previous image and currently image are concatenated horizontally
+            if len(img_i.shape) == 2:
+                img_width = int(img_i.shape[1] / 2)
+                prev_img = img_i[:, :img_width]
+                infer_img = img_i[:, img_width:]
+            # if the previous image image is stacked as another layer
+            elif len(img_i.shape) == 3:
+                prev_img = img_i[0]
+                infer_img = img_i[1]
+            else:
+                raise ValueError('Unknown data structure of input images.')
             tifffile.imsave(self.prev_image_path + save_i + '.tif', prev_img)
             tifffile.imsave(self.image_path + save_i + '.tif', infer_img)
 
         # create masks
         files_mask = glob.glob(self.source_dir[1] + '*')
-        print('%s files found' % len(files_mask))
+        logging.info('%s files found' % len(files_mask))
         for file_i in files_mask:
             mask_i = tifffile.imread(file_i)
             if self.rescale is not None:
@@ -264,7 +273,7 @@ class DataProcess(Dataset):
                 tifffile.imsave(self.aug_mask_path + f'{k}.tif', masks_aug_i[j])
                 tifffile.imsave(self.aug_prev_image_path + f'{k}.tif', prev_image_aug_i[j])
                 k += 1
-        print(f'Number of training images: {k}')
+        logging.info(f'Number of training images: {k}')
 
     def __len__(self):
         if self.aug_factor is not None:

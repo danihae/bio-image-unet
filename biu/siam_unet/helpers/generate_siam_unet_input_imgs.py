@@ -3,6 +3,11 @@ import numpy as np
 import tifffile
 import os
 import glob
+from scipy.ndimage import geometric_transform
+import tifffile
+import glob
+import numpy as np
+import matplotlib.pyplot as plt
 
 def generate_coupled_image(movie, frame, output):
     """
@@ -27,18 +32,44 @@ def generate_coupled_image(movie, frame, output):
     out = np.concatenate((prev_frame, curr_frame), axis=1).astype(np.uint8)
     cv2.imwrite(filename=output, img=out, )
 
-def generate_coupled_image_from_self(img, output_img):
+def generate_coupled_image_from_self(img, out_img, noise_amp=10):
     """
-        Generates an input image for siam by concatenating an image with itself 
+        Generates an input image for siam by concatenating an image with a transformed version of itself 
     """
 
+    def __synthesize_prev_img(in_img, noise_amp=10):
+        """Synthesizes previous frame by transforming the input image
+
+        Args:
+            in_img (str): input image path
+            noise_amp (int, optional): Defaults to 10.
+
+        Returns:
+            2-D ndarray: the synthesized previous image
+        """
+        data = tifffile.imread(in_img)
+        image = data
+        modes_x, modes_y = 10, 4
+        amp = 1
+        amps_x, amps_y = np.random.random_sample(modes_x)*amp, np.random.random_sample(modes_y)*amp
+        def func(xy):
+            return (xy[0]+ np.sum(amps_y * np.sin(modes_y*2*np.pi*xy[0]/image.shape[0])), xy[1] + np.sum(amps_x * np.sin(modes_x*2*np.pi*xy[1]/image.shape[1])))
+        out = geometric_transform(image, func)
+        noise = np.random.normal(0, noise_amp, size=image.shape)
+        out = out +noise
+        out[out<0] = 0
+        out[out>255] = 255
+
+        return out
+
     curr_frame = tifffile.imread(img)
+    synthesized_previous_frame = __synthesize_prev_img(img, noise_amp)
 
     if curr_frame is None:
         raise IOError   # tiff file not found
 
-    out = np.concatenate((curr_frame, curr_frame), axis=1).astype(np.uint8)
-    cv2.imwrite(filename=output, img=out, )
+    out = np.concatenate((synthesized_previous_frame, curr_frame), axis=1).astype(np.uint8)
+    cv2.imwrite(filename=out_img, img=out, )
 
 def utilize_search_result(search_result_mr_txt, movie_path_prefix, labels_path_prefix, output_folder):
     """Parses search results obtained from find_frame_of_image.find_frame_of_image()'s machine readable output and pass them to generate_coupled_image() to create training data for Siam_UNet. 
