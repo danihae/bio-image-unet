@@ -1,5 +1,6 @@
 import os
 import shutil
+import logging
 
 import cv2
 import numpy as np
@@ -42,7 +43,7 @@ class Predict:
         n_filter : int
             Number of convolution filters
         resize_dim
-            Image dimensions for resizing for prediction
+            Image dimensions for resizing for prediction. If resize_dim=None, the image will not be resized but rather the whole image will be processed by the convolution layers.
         invert : bool
             Invert greyscale of image(s) before prediction
         clip_threshold : Tuple[float, float]
@@ -53,12 +54,13 @@ class Predict:
             If True, results are normalized to [0, 255]
         """
         self.tif_file = tif_file
-        self.resize_dim = resize_dim
         self.add_tile = add_tile
         self.n_filter = n_filter
         self.invert = invert
         self.clip_threshold = clip_threshold
         self.result_name = result_name
+        if '/' in str(result_name): # make directory if not exist
+            os.makedirs(str(result_name)[:str(result_name).rfind('/')], exist_ok=True)
         self.normalize_result = normalize_result  # todo to be implemented for Siam-U-Net?
 
         # load model
@@ -70,6 +72,10 @@ class Predict:
         tif_key = TiffFile(self.tif_file)
         self.tif_len = len(tif_key.pages)
         self.imgs_shape = [self.tif_len, tif_key.pages[0].shape[0], tif_key.pages[0].shape[1]]
+        if resize_dim is not None:
+            self.resize_dim = resize_dim
+        else:
+            self.resize_dim = (self.imgs_shape[1], self.imgs_shape[2])
 
         # create temp folder
         temp_dir = f'temp_{self.tif_file.split("/")[-1]}'
@@ -83,10 +89,13 @@ class Predict:
 
         # predict each pair, and save the output of each one as a separate image
         os.makedirs(temp_dir, exist_ok=True)
-        print('Predicting data ...')
+        logging.info('Predicting data ...')
         for i in tqdm(range(self.tif_len), unit='frame'):
             if i == 0:
-                prev_img = tifffile.imread(self.tif_file, key=1)
+                if self.tif_len == 1:
+                    prev_img = tifffile.imread(self.tif_file, key=0)
+                else:
+                    prev_img = tifffile.imread(self.tif_file, key=1)
             else:
                 prev_img = current_img
             current_img = tifffile.imread(self.tif_file, key=i)
@@ -94,13 +103,13 @@ class Predict:
             img_stack = np.array([prev_img, current_img])
             img_stack = self.preprocess(img_stack)
             patches = self.split(img_stack)
-            _ = print(f'Patches shape:{patches.shape}') if i == 0 else None
+            _ = logging.info(f'Patches shape:{patches.shape}') if i == 0 else None
             result_patches = self.predict(patches)
             imgs_result = self.stitch(result_patches)
             cv2.imwrite(filename=f'{temp_dir}/{i}.tif', img=imgs_result.astype('uint8'), )
 
         # merge the images and save as tif file
-        print(f'Saving prediction results as {result_name}...')
+        logging.info(f'Saving prediction results as {result_name}...')
         tifffile.imwrite(data=tqdm(self.individual_tif_generator(dir=temp_dir), total=self.tif_len, unit='frame'),
                          file=self.result_name, dtype=np.uint8, shape=self.imgs_shape)
         # remove temp folder
@@ -155,23 +164,32 @@ class Predict:
 
         # split in resize_dim
         n = 0
-        if self.imgs_shape[0] > 1:  # If our input image has more than one frame
-            i = 1
-            for j in range(self.N_x):
-                for k in range(self.N_y):
-                    patches[n, 0, :, :] = imgs[i][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-                                          self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
-                    patches[n, 1, :, :] = imgs[i - 1][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-                                          self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
-                    n += 1
-        elif self.imgs_shape[0] == 1:
-            for j in range(self.N_x):
-                for k in range(self.N_y):
-                    patches[n, 0, :, :] = imgs[self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-                                          self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
-                    patches[n, 1, :, :] = imgs[self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-                                          self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
-                    n += 1
+
+        i = 1
+        for j in range(self.N_x):
+            for k in range(self.N_y):
+                patches[n, 0, :, :] = imgs[i][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
+                                        self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+                patches[n, 1, :, :] = imgs[i - 1][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
+                                        self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+                n += 1
+        # if self.imgs_shape[0] > 1:  # If our input image has more than one frame
+        #     i = 1
+        #     for j in range(self.N_x):
+        #         for k in range(self.N_y):
+        #             patches[n, 0, :, :] = imgs[i][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
+        #                                   self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+        #             patches[n, 1, :, :] = imgs[i - 1][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
+        #                                   self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+        #             n += 1
+        # elif self.imgs_shape[0] == 1:
+        #     for j in range(self.N_x):
+        #         for k in range(self.N_y):
+        #             patches[n, 0, :, :] = imgs[self.X_start[j]:self.X_start[j] + self.resize_dim[0],
+        #                                   self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+        #             patches[n, 1, :, :] = imgs[self.X_start[j]:self.X_start[j] + self.resize_dim[0],
+        #                                   self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+        #             n += 1
         return patches
 
     def predict(self, patches):
@@ -193,9 +211,6 @@ class Predict:
         return result_patches
 
     def stitch(self, result_patches):
-        # create array
-        imgs_result = np.zeros((self.imgs_shape[0], np.max((self.resize_dim[0], self.imgs_shape[1]))
-                                , np.max((self.resize_dim[1], self.imgs_shape[2]))), dtype='uint8')
         i = 0
         if self.imgs_shape[0] > 1:  # if stack
             stack_result_i = np.zeros((self.N_per_img, np.max((self.resize_dim[0], self.imgs_shape[1])),
@@ -216,25 +231,3 @@ class Predict:
         imgs_result = imgs_result[:self.imgs_shape[1], :self.imgs_shape[2]]
 
         return imgs_result
-
-    def save_as_tif(self, imgs, filename, normalize=False):  # todo use normalization part, else remove function?
-        """
-        Save numpy array as tif file
-
-        Parameters
-        ----------
-        imgs : np.array
-            Data array
-        filename : str
-            Filepath to save result
-        normalize : bool
-            If true, data is normalized [0, 255]
-        """
-        if normalize:
-            imgs = imgs.astype('float32')
-            imgs = imgs - np.nanmin(imgs)
-            imgs /= np.nanmax(imgs)
-            imgs *= 255
-        imgs = imgs.astype('uint8')
-        tifffile.imsave(filename, imgs)
-        print('Saving prediction results as %s' % filename)

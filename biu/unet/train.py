@@ -8,6 +8,7 @@ from torch.utils.data import DataLoader, random_split
 from .losses import *
 from .predict import Predict
 from .unet import Unet
+from .baby_unet import BabyUnet
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -116,7 +117,7 @@ class Trainer:
 
         torch.cuda.empty_cache()
 
-    def start(self, test_data_path=None, result_path=None):
+    def start(self, test_data_path=None, result_path=None, test_resize_dim=(512, 512)):
         """
         Start network training. Optional: predict small test sample after each epoch.
 
@@ -126,6 +127,8 @@ class Trainer:
             Path of folder with test tif files
         result_path : str
             Path for saving prediction results of test data
+        test_resize_dim: tuple
+            Resize dimensions for prediction of test movies
         """
         for epoch in range(self.num_epochs):
             self.__iterate(epoch, 'train')
@@ -160,5 +163,5 @@ class Trainer:
                 files = glob.glob(test_data_path + '*.tif')
                 for i, file in enumerate(files):
                     Predict(file, result_path + os.path.basename(file) + f'epoch_{epoch}.tif',
-                            self.save_dir + '/' + f'model_epoch_{epoch}.pth', self.network, resize_dim=(2048, 2048),
+                            self.save_dir + '/' + f'model_epoch_{epoch}.pth', self.network, resize_dim=test_resize_dim,
                             invert=False, n_filter=self.n_filter)

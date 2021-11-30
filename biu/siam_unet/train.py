@@ -1,5 +1,6 @@
 import glob
 import os
+import logging
 
 import torch
 import torch.optim as optim
@@ -15,7 +16,7 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 class Trainer:
-    def __init__(self, dataset, num_epochs, batch_size=4, lr=1e-3, n_filter=64, val_split=0.2,
+    def __init__(self, dataset, num_epochs, batch_size=4, lr=1e-3, n_filter=32, val_split=0.2,
                  save_dir='./', save_name='model.pth', save_iter=False, loss_function='BCEDice',
                  loss_params=(1, 1), load_weights=False):
         """
@@ -87,17 +88,15 @@ class Trainer:
 
     def iterate(self, epoch, mode):
         if mode == 'train':
-            print('\nStarting training epoch %s ...' % epoch)
+            logging.info('\nStarting training epoch %s ...' % epoch)
             for i, batch_i in enumerate(Bar(self.train_loader)):
                 x_i = batch_i['image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                 prev_x_i = batch_i['prev_image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                 y_i = batch_i['mask'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                 # Forward pass: Compute predicted y by passing x to the model
                 y_pred, y_logits = self.model(x_i, prev_x_i)
-
-                # Compute and print loss
+                # Compute loss
                 loss = self.criterion(y_logits, y_i)
-
                 # Zero gradients, perform a backward pass, and update the weights.
                 self.optimizer.zero_grad()
                 loss.backward()
@@ -105,7 +104,7 @@ class Trainer:
 
         elif mode == 'val':
             loss_list = []
-            print('\nStarting validation epoch %s ...' % epoch)
+            logging.info('\nStarting validation epoch %s ...' % epoch)
             with torch.no_grad():
                 for i, batch_i in enumerate(Bar(self.val_loader)):
                     x_i = batch_i['image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
@@ -113,6 +112,7 @@ class Trainer:
                     y_i = batch_i['mask'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                     # Forward pass: Compute predicted y by passing x to the model
                     y_pred, y_logits = self.model(x_i, prev_x_i)
+                    # Compute loss
                     loss = self.criterion(y_logits, y_i)
                     loss_list.append(loss.detach())
             val_loss = torch.stack(loss_list).mean()
@@ -142,7 +142,7 @@ class Trainer:
                 val_loss = self.iterate(epoch, 'val')
                 self.scheduler.step(val_loss)
             if val_loss < self.best_loss:
-                print('\nValidation loss improved from %s to %s - saving model state' % (
+                logging.info('\nValidation loss improved from %s to %s - saving model state' % (
                     round(self.best_loss.item(), 5), round(val_loss.item(), 5)))
                 self.state['best_loss'] = self.best_loss = val_loss
                 torch.save(self.state, self.save_dir + '/' + self.save_name)
@@ -152,6 +152,7 @@ class Trainer:
             if test_data_path is not None:
                 files = glob.glob(test_data_path + '*.tif')
                 for i, file in enumerate(files):
-                    Predict(file, result_path + os.path.basename(file) + f'epoch_{epoch}.tif', self.save_dir + '/' +
-                            f'model_epoch_{epoch}.pth', resize_dim=test_resize_dim, invert=False)
+                    Predict(file, result_path + os.path.basename(file) + f'epoch_{epoch}.tif',
+                            self.save_dir + '/' + f'model_epoch_{epoch}.pth', resize_dim=test_resize_dim,
+                            invert=False, n_filter=self.n_filter)
 

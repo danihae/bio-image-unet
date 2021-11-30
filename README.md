@@ -3,8 +3,8 @@
 Implementations of U-Net and Siam U-Net for biological image segmentation
 
 ### Authors
-[Daniel Härtter](mailto:daniel.haertter@duke.edu) (Duke University, University of Göttingen) \
-[Yuxi Long](mailto:longyuxi@live.com) (Duke University) \
+[Daniel Härtter](daniel.haertter@duke.edu) (Duke University, University of Göttingen) \
+[Yuxi Long](longyuxi@live.com) (Duke University) \
 Andreas Primeßnig
 
 ### Installation
