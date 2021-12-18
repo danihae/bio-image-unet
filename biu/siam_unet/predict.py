@@ -8,6 +8,7 @@ import tifffile
 import torch
 from tifffile.tifffile import TiffFile
 from tqdm import tqdm as tqdm
+from biu.progress import ProgressNotifier
 
 from .siam_unet import Siam_UNet
 
@@ -24,7 +25,7 @@ class Predict:
     """
 
     def __init__(self, tif_file, result_name, model_params, n_filter=32, resize_dim=(512, 512), invert=False,
-                 clip_threshold=(0.0, 99.8), add_tile=0, normalize_result=False):
+                 clip_threshold=(0.0, 99.8), add_tile=0, normalize_result=False, progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
         """
         Predicts a tif movie
 
@@ -52,6 +53,8 @@ class Predict:
             Add additional tiles for splitting large images to increase overlap
         normalize_result : bool
             If True, results are normalized to [0, 255]
+        progress_notifier:
+            Wrapper to show tqdm progress notifier in gui
         """
         self.tif_file = tif_file
         self.add_tile = add_tile
@@ -86,6 +89,8 @@ class Predict:
         self.N_y = int(np.ceil(self.imgs_shape[2] / self.resize_dim[1])) + self.add_tile
         self.N_per_img = self.N_x * self.N_y
         self.N = self.N_x * self.N_y  # total number of patches
+
+        self.progress_notifier = progress_notifier
 
         # predict each pair, and save the output of each one as a separate image
         os.makedirs(temp_dir, exist_ok=True)
@@ -195,7 +200,7 @@ class Predict:
     def predict(self, patches):
         result_patches = np.zeros((patches.shape[0], 1, patches.shape[2], patches.shape[3]), dtype='uint8')
         with torch.no_grad():
-            for i, patch_i in enumerate(patches):
+            for i, patch_i in enumerate(self.progress_notifier.iterator(patches)):
                 image_patch_i = patch_i[0, :, :]
                 prev_image_patch_i = patch_i[1, :, :]
 
