@@ -95,7 +95,8 @@ class Predict:
         # predict each pair, and save the output of each one as a separate image
         os.makedirs(temp_dir, exist_ok=True)
         logging.info('Predicting data ...')
-        for i in tqdm(range(self.tif_len), unit='frame'):
+        # for i in tqdm(range(self.tif_len), unit='frame'):
+        for i, _ in enumerate(self.progress_notifier.iterator(range(self.tif_len))):
             if i == 0:
                 if self.tif_len == 1:
                     prev_img = tifffile.imread(self.tif_file, key=0)
@@ -115,7 +116,7 @@ class Predict:
 
         # merge the images and save as tif file
         logging.info(f'Saving prediction results as {result_name}...')
-        tifffile.imwrite(data=tqdm(self.individual_tif_generator(dir=temp_dir), total=self.tif_len, unit='frame'),
+        tifffile.imwrite(data=self.individual_tif_generator(dir=temp_dir),
                          file=self.result_name, dtype=np.uint8, shape=self.imgs_shape)
         # remove temp folder
         shutil.rmtree(temp_dir)
@@ -200,7 +201,8 @@ class Predict:
     def predict(self, patches):
         result_patches = np.zeros((patches.shape[0], 1, patches.shape[2], patches.shape[3]), dtype='uint8')
         with torch.no_grad():
-            for i, patch_i in enumerate(self.progress_notifier.iterator(patches)):
+            # for i, patch_i in enumerate(self.progress_notifier.iterator(patches)):
+            for i, patch_i in enumerate(patches):
                 image_patch_i = patch_i[0, :, :]
                 prev_image_patch_i = patch_i[1, :, :]
 
