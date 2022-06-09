@@ -9,6 +9,7 @@ import glob
 import numpy as np
 import matplotlib.pyplot as plt
 
+
 def generate_coupled_image(movie, frame, output):
     """
     Generates an image from the previous frame of the given frame and the given frame of the given movie. Should be used as input to Siam_UNet. The output image is a tiff file with the files like this, with the output image of twice the width of the input.
@@ -27,10 +28,11 @@ def generate_coupled_image(movie, frame, output):
 
     if curr_frame is None:
         print(f'Error: {movie} not found.')
-        raise IOError   # tiff file not found
+        raise IOError  # tiff file not found
 
     out = np.concatenate((prev_frame, curr_frame), axis=1).astype(np.uint8)
     cv2.imwrite(filename=output, img=out, )
+
 
 def generate_coupled_image_from_self(img, out_img, noise_amp=10):
     """
@@ -51,14 +53,17 @@ def generate_coupled_image_from_self(img, out_img, noise_amp=10):
         image = data
         modes_x, modes_y = 10, 4
         amp = 1
-        amps_x, amps_y = np.random.random_sample(modes_x)*amp, np.random.random_sample(modes_y)*amp
+        amps_x, amps_y = np.random.random_sample(modes_x) * amp, np.random.random_sample(modes_y) * amp
+
         def func(xy):
-            return (xy[0]+ np.sum(amps_y * np.sin(modes_y*2*np.pi*xy[0]/image.shape[0])), xy[1] + np.sum(amps_x * np.sin(modes_x*2*np.pi*xy[1]/image.shape[1])))
+            return (xy[0] + np.sum(amps_y * np.sin(modes_y * 2 * np.pi * xy[0] / image.shape[0])),
+                    xy[1] + np.sum(amps_x * np.sin(modes_x * 2 * np.pi * xy[1] / image.shape[1])))
+
         out = geometric_transform(image, func)
         noise = np.random.normal(0, noise_amp, size=image.shape)
-        out = out +noise
-        out[out<0] = 0
-        out[out>255] = 255
+        out = out + noise
+        out[out < 0] = 0
+        out[out > 255] = 255
 
         return out
 
@@ -66,10 +71,11 @@ def generate_coupled_image_from_self(img, out_img, noise_amp=10):
     synthesized_previous_frame = __synthesize_prev_img(img, noise_amp)
 
     if curr_frame is None:
-        raise IOError   # tiff file not found
+        raise IOError  # tiff file not found
 
     out = np.concatenate((synthesized_previous_frame, curr_frame), axis=1).astype(np.uint8)
     cv2.imwrite(filename=out_img, img=out, )
+
 
 def utilize_search_result(search_result_mr_txt, movie_path_prefix, labels_path_prefix, output_folder):
     """Parses search results obtained from find_frame_of_image.find_frame_of_image()'s machine readable output and pass them to generate_coupled_image() to create training data for Siam_UNet. 
@@ -106,24 +112,16 @@ def utilize_search_result(search_result_mr_txt, movie_path_prefix, labels_path_p
         lines = sr.readlines()
         for line in lines:
             label_path = labels_path_prefix + '/' + line.split('\t')[0]
-            image_path = movie_path_prefix + '/' +  line.split('\t')[1]
+            image_path = movie_path_prefix + '/' + line.split('\t')[1]
             output_image_path = image_output_folder + line.split('\t')[0]
             frame_number = int(line.split('\t')[2])
             # copy label to label folder
             os.system(f'cp \'{label_path}\' \'{label_output_folder}\'')
             # create concatenated image in image_folder
             generate_coupled_image(image_path, frame=frame_number, output=output_image_path)
-    
+
     for file in glob.glob(f'{label_output_folder}/*.tif'):
         i = cv2.imread(file)
         fo = cv2.cvtColor(i, cv2.COLOR_RGB2GRAY)
         os.remove(file)
         cv2.imwrite(file, fo)
-
-
-
-if __name__ == '__main__':
-    import constants
-    # utilize_search_result(f'{constants.RAZER_LOCAL_BASE_DIR}/training_data/training_data/yokogawa/lateral_epidermis/search_result_mr.txt', f'{constants.RAZER_LOCAL_ALL_MOVIES_DIR}', f'{constants.RAZER_LOCAL_BASE_DIR}/training_data/training_data/yokogawa/lateral_epidermis/label/', f'{constants.RAZER_LOCAL_BASE_DIR}/training_data/training_data/yokogawa/temp_test/')
-    
-    utilize_search_result(f'{constants.RAZER_LOCAL_BASE_DIR}/training_data/training_data/yokogawa/amnioserosa/search_result_mr.txt', f'{constants.RAZER_LOCAL_ALL_MOVIES_DIR}', f'{constants.RAZER_LOCAL_BASE_DIR}/training_data/training_data/yokogawa/amnioserosa/label/', f'{constants.RAZER_LOCAL_BASE_DIR}/training_data/training_data/yokogawa/siam_amnioserosa_sanitize_test/')
