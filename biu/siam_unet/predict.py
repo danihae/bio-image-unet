@@ -1,8 +1,5 @@
 import os
-import shutil
-import logging
 
-import cv2
 import numpy as np
 import tifffile
 import torch
@@ -24,7 +21,7 @@ class Predict:
     """
 
     def __init__(self, tif_file, result_name, model_params, n_filter=32, resize_dim=(512, 512), invert=False,
-                 clip_threshold=(0.0, 99.8), add_tile=0, normalize_result=False):
+                 clip_threshold=(0.0, 99.98), add_tile=0, normalize_result=False):
         """
         Predicts a tif movie
 
@@ -59,13 +56,12 @@ class Predict:
         self.invert = invert
         self.clip_threshold = clip_threshold
         self.result_name = result_name
-        if '/' in str(result_name): # make directory if not exist
-            os.makedirs(str(result_name)[:str(result_name).rfind('/')], exist_ok=True)
         self.normalize_result = normalize_result  # todo to be implemented for Siam-U-Net?
 
         # load model
-        self.model = Siam_UNet(n_filter=self.n_filter).to(device)
-        self.model.load_state_dict(torch.load(model_params)['state_dict'])
+        self.model_params = torch.load(model_params)
+        self.model = Siam_UNet(n_filter=self.model_params['n_filter'], mode=self.model_params['mode']).to(device)
+        self.model.load_state_dict(self.model_params['state_dict'])
         self.model.eval()
 
         # split data into groups of two images
@@ -89,38 +85,27 @@ class Predict:
 
         # predict each pair, and save the output of each one as a separate image
         os.makedirs(temp_dir, exist_ok=True)
-        logging.info('Predicting data ...')
-        for i in tqdm(range(self.tif_len), unit='frame'):
-            if i == 0:
-                if self.tif_len == 1:
-                    prev_img = tifffile.imread(self.tif_file, key=0)
+        print('Predicting data ...')
+        with tifffile.TiffWriter(self.result_name, bigtiff=False) as tif:
+            for i in tqdm(range(self.tif_len), unit='frame'):
+                if i == 0:
+                    if self.tif_len == 1:
+                        prev_img = tifffile.imread(self.tif_file, key=0)
+                    else:
+                        prev_img = tifffile.imread(self.tif_file, key=1)
                 else:
-                    prev_img = tifffile.imread(self.tif_file, key=1)
-            else:
-                prev_img = current_img
-            current_img = tifffile.imread(self.tif_file, key=i)
+                    prev_img = current_img
+                current_img = tifffile.imread(self.tif_file, key=i)
 
-            img_stack = np.array([prev_img, current_img])
-            img_stack = self.preprocess(img_stack)
-            patches = self.split(img_stack)
-            _ = logging.info(f'Patches shape:{patches.shape}') if i == 0 else None
-            result_patches = self.predict(patches)
-            imgs_result = self.stitch(result_patches)
-            cv2.imwrite(filename=f'{temp_dir}/{i}.tif', img=imgs_result.astype('uint8'), )
+                img_stack = np.array([prev_img, current_img])
+                img_stack = self.__preprocess(img_stack)
+                patches = self.__split(img_stack)
+                print(f'Patches shape:{patches.shape}') if i == 0 else None
+                result_patches = self.__predict(patches)
+                imgs_result = self.__stitch(result_patches)
+                tif.write(imgs_result, contiguous=True)
 
-        # merge the images and save as tif file
-        logging.info(f'Saving prediction results as {result_name}...')
-        tifffile.imwrite(data=tqdm(self.individual_tif_generator(dir=temp_dir), total=self.tif_len, unit='frame'),
-                         file=self.result_name, dtype=np.uint8, shape=self.imgs_shape)
-        # remove temp folder
-        shutil.rmtree(temp_dir)
-
-    def individual_tif_generator(self, dir):
-        # a generator that returns each frame in the directory
-        for i in range(self.tif_len):
-            yield tifffile.imread(f'{dir}/{i}.tif')
-
-    def preprocess(self, imgs):
+    def __preprocess(self, imgs):
         if len(imgs.shape) == 3:
             for i, img in enumerate(imgs):
                 img = np.clip(img, a_min=np.nanpercentile(img, self.clip_threshold[0]),
@@ -140,7 +125,7 @@ class Predict:
         imgs = imgs.astype('uint8')
         return imgs
 
-    def split(self, imgs):
+    def __split(self, imgs):
         # define array for prediction
         patches = np.zeros((self.N, 2, self.resize_dim[0], self.resize_dim[1]), dtype='uint8')
 
@@ -173,26 +158,9 @@ class Predict:
                 patches[n, 1, :, :] = imgs[i - 1][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
                                         self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
                 n += 1
-        # if self.imgs_shape[0] > 1:  # If our input image has more than one frame
-        #     i = 1
-        #     for j in range(self.N_x):
-        #         for k in range(self.N_y):
-        #             patches[n, 0, :, :] = imgs[i][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-        #                                   self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
-        #             patches[n, 1, :, :] = imgs[i - 1][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-        #                                   self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
-        #             n += 1
-        # elif self.imgs_shape[0] == 1:
-        #     for j in range(self.N_x):
-        #         for k in range(self.N_y):
-        #             patches[n, 0, :, :] = imgs[self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-        #                                   self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
-        #             patches[n, 1, :, :] = imgs[self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-        #                                   self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
-        #             n += 1
         return patches
 
-    def predict(self, patches):
+    def __predict(self, patches):
         result_patches = np.zeros((patches.shape[0], 1, patches.shape[2], patches.shape[3]), dtype='uint8')
         with torch.no_grad():
             for i, patch_i in enumerate(patches):
@@ -210,14 +178,17 @@ class Predict:
                 del patch_i, res_i
         return result_patches
 
-    def stitch(self, result_patches):
+    def __stitch(self, result_patches):
+        dtype = result_patches.dtype
         i = 0
         if self.imgs_shape[0] > 1:  # if stack
             stack_result_i = np.zeros((self.N_per_img, np.max((self.resize_dim[0], self.imgs_shape[1])),
-                                       np.max((self.resize_dim[1], self.imgs_shape[2]))), dtype='uint8') * np.nan
+                                       np.max((self.resize_dim[1], self.imgs_shape[2]))), dtype=dtype) * np.nan
         elif self.imgs_shape[0] == 1:  # if only one image
             stack_result_i = np.zeros((self.N_per_img, np.max((self.resize_dim[0], self.imgs_shape[1])),
-                                       np.max((self.resize_dim[1], self.imgs_shape[2]))), dtype='uint8') * np.nan
+                                       np.max((self.resize_dim[1], self.imgs_shape[2]))), dtype=dtype) * np.nan
+        else:
+            raise ValueError('Wrong data format!')
         n = 0
         for j in range(self.N_x):
             for k in range(self.N_y):
@@ -225,7 +196,7 @@ class Predict:
                 self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]] = result_patches[i * self.N_per_img + n, 0, :, :]
                 n += 1
         # average overlapping regions
-        imgs_result = np.nanmean(stack_result_i, axis=0)
+        imgs_result = np.nanmean(stack_result_i, axis=0).astype(dtype)
 
         # change to input size (if zero padding)
         imgs_result = imgs_result[:self.imgs_shape[1], :self.imgs_shape[2]]
