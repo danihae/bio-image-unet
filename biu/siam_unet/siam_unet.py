@@ -5,9 +5,11 @@ import logging
 
 
 class Siam_UNet(nn.Module):
-    """Implementation of Siamese U-Net following Dunnhofer et al. https://doi.org/10.1016/j.media.2019.101631"""
-    def __init__(self, n_filter=32, bias=0):
+    """Implementation of Siamese U-Net inspired by Dunnhofer et al. https://doi.org/10.1016/j.media.2019.101631"""
+    def __init__(self, n_filter=32, mode='max'):
         super().__init__()
+        # mode for combining T-1 and T
+        self.mode = mode
         # encode
         self.encode1 = self.conv(1, n_filter)
         self.encode2 = self.conv(n_filter, n_filter)
@@ -100,8 +102,11 @@ class Siam_UNet(nn.Module):
         me8 = self.encode8(me7)
         mm4 = self.maxpool2(me8)
 
-        # depth-wise cross-correlation
-        corr = self.depthwise_xcorr(m4, mm4)
+        # depth-wise cross-correlation or element-wise maximum
+        if self.mode == 'corr':
+            corr = self.depthwise_xcorr(m4, mm4)
+        elif self.mode == 'max':
+            corr = torch.maximum(m4, mm4)
         # mid layer
         mid1 = self.middle_conv1(corr)
         mid2 = self.middle_conv2(mid1)
