@@ -1,21 +1,20 @@
 import glob
 import os
 import shutil
-import logging
 
 import numpy as np
 import tifffile
 import torch
 from albumentations import (
     ShiftScaleRotate, GaussNoise,
-    RandomBrightnessContrast, Flip, Compose, RandomRotate90)
+    RandomBrightnessContrast, Compose, RandomRotate90)
 from skimage import morphology, transform
 from torch.utils.data import Dataset
 
 
 class DataProcess(Dataset):
-    def __init__(self, source_dir, dim_out=(256, 256), aug_factor=10, data_path='../data/',
-                 dilate_mask=0, dilate_kernel='disk', val_split=0.2, invert=False, skeletonize=False, create=True,
+    def __init__(self, source_dir, dim_out=(256, 256), aug_factor=10, data_path='../data/', threshold_masks=50,
+                 dilate_mask=0, dilate_kernel='disk', val_split=0.2, invert_masks=False, skeletonize=False, create=True,
                  clip_threshold=(0.2, 99.8), shiftscalerotate=(0, 0, 0), noise_amp=10, brightness_contrast=(0.25, 0.25),
                  rescale=None):
         """
@@ -37,13 +36,15 @@ class DataProcess(Dataset):
             Factor of image augmentation
         data_path : str
             Base path of directories for training data
+        threshold_masks : int
+            Threshold to binarize masks [0-255]
         dilate_mask
-            Radius of binary dilation of masks [-2, -1, 0, 1, 2]
+            Radius of binary erosion/dilation of masks [-2, -1, 0, 1, 2]
         dilate_kernel : str
             Dilation kernel ('disk' or 'square')
         val_split : float
             Validation split for training
-        invert : bool
+        invert_masks : bool
             If True, greyscale binary labels is inverted
         skeletonize : bool
             If True, binary labels are skeletonized
@@ -64,8 +65,9 @@ class DataProcess(Dataset):
         self.create = create
         self.data_path = data_path
         self.dim_out = dim_out
+        self.threshold_masks = threshold_masks
         self.skeletonize = skeletonize
-        self.invert = invert
+        self.invert_masks = invert_masks
         self.clip_threshold = clip_threshold
         self.aug_factor = aug_factor
         self.shiftscalerotate = shiftscalerotate
@@ -90,7 +92,6 @@ class DataProcess(Dataset):
         self.image_path = self.data_path + '/image/'
         self.prev_image_path = self.data_path + '/prev_image/'
         self.mask_path = self.data_path + '/mask/'
-        self.npy_path = self.data_path + '/npydata/'
         self.merge_path = self.data_path + '/merge/'
         self.split_merge_path = self.data_path + '/split/merge/'
         self.split_image_path = self.data_path + '/split/image/'
@@ -109,7 +110,6 @@ class DataProcess(Dataset):
         # make folders
         os.makedirs(self.image_path, exist_ok=True)
         os.makedirs(self.mask_path, exist_ok=True)
-        os.makedirs(self.npy_path, exist_ok=True)
         os.makedirs(self.merge_path, exist_ok=True)
         os.makedirs(self.split_merge_path, exist_ok=True)
         os.makedirs(self.split_image_path, exist_ok=True)
@@ -155,25 +155,19 @@ class DataProcess(Dataset):
 
         # create masks
         files_mask = glob.glob(self.source_dir[1] + '*')
-        logging.info('%s files found' % len(files_mask))
+        print('%s files found' % len(files_mask))
         for file_i in files_mask:
             mask_i = tifffile.imread(file_i)
             if self.rescale is not None:
-                mask_i = transform.rescale(mask_i, self.rescale) * 255
-                mask_i[mask_i < 255] = 0
-
-            # if mask_i.shape[0] != img_width:
-            #     raise IOError(f"Mask width {mask_i.shape[0]} doesn't match up with image width {img_width}. "
-            #           f"Have concatenated the input image with its previous frame?")
-            # if mask_i.shape[1] != img_width:
-            #     print(f"Mask width {mask_i.shape[1]} for {file_i} doesn't match up with image width {img_width}. Have concatenated the input image with its previous frame?")
-            #     raise IOError # mask width mismatch
-
+                mask_i = transform.rescale(mask_i, self.rescale)
+            if self.invert_masks:
+                mask_i = 255 - mask_i
+            if self.threshold_masks is not None:
+                mask_i[mask_i >= self.threshold_masks] = 255
+                mask_i[mask_i < self.threshold_masks] = 0
             if self.skeletonize:
                 mask_i[mask_i > 1] = 1
-                mask_i = 1 - mask_i
-                mask_i = morphology.skeletonize(mask_i)
-                mask_i = 255 * (1 - mask_i)
+                mask_i = morphology.skeletonize(mask_i) * 255
             if self.dilate_kernel == 'disk':
                 kernel = morphology.disk
             elif self.dilate_kernel == 'square':
@@ -181,11 +175,9 @@ class DataProcess(Dataset):
             else:
                 raise ValueError(f'Dilate kernel {self.dilate_kernel} unknown!')
             if self.dilate_mask > 0:
-                mask_i = morphology.erosion(mask_i, kernel(self.dilate_mask))
+                mask_i = morphology.dilation(mask_i, kernel(self.dilate_mask))
             elif self.dilate_mask < 0:
-                mask_i = morphology.dilation(mask_i, kernel(-self.dilate_mask))
-            if self.invert:
-                mask_i = 255 - mask_i
+                mask_i = morphology.erosion(mask_i, kernel(-self.dilate_mask))
             mask_i = mask_i.astype('uint8')
             save_i = os.path.splitext(os.path.basename(file_i))[0]
             save_i = save_i.replace(' ', '_')
@@ -243,7 +235,6 @@ class DataProcess(Dataset):
 
     def __augment(self, p=0.8):
         aug_pipeline = Compose([
-            Flip(),
             RandomRotate90(p=1.0),
             ShiftScaleRotate(self.shiftscalerotate[0], self.shiftscalerotate[1], self.shiftscalerotate[2]),
             GaussNoise(var_limit=(self.noise_amp, self.noise_amp), p=0.3),
@@ -261,19 +252,18 @@ class DataProcess(Dataset):
             image_i = tifffile.imread(patches_image[i])
             mask_i = tifffile.imread(patches_mask[i])
             prev_image_i = tifffile.imread(patches_prev_image[i])
-
-            data_i = {'image': image_i, 'mask': mask_i, 'prev_image': prev_image_i}
+            data_i = {'image': np.dstack([image_i, prev_image_i]), 'mask': mask_i}
             data_aug_i = np.asarray([aug_pipeline(**data_i) for _ in range(self.aug_factor)])
-            imgs_aug_i = np.asarray([data_aug_i[j]['image'] for j in range(self.aug_factor)])
+            imgs_aug_i = np.asarray([data_aug_i[j]['image'][:, :, 0] for j in range(self.aug_factor)])
             masks_aug_i = np.asarray([data_aug_i[j]['mask'] for j in range(self.aug_factor)])
-            prev_image_aug_i = np.asarray([data_aug_i[j]['prev_image'] for j in range(self.aug_factor)])
+            prev_image_aug_i = np.asarray([data_aug_i[j]['image'][:, :, 1] for j in range(self.aug_factor)])
 
             for j in range(self.aug_factor):
                 tifffile.imsave(self.aug_image_path + f'{k}.tif', imgs_aug_i[j])
                 tifffile.imsave(self.aug_mask_path + f'{k}.tif', masks_aug_i[j])
                 tifffile.imsave(self.aug_prev_image_path + f'{k}.tif', prev_image_aug_i[j])
                 k += 1
-        logging.info(f'Number of training images: {k}')
+        print(f'Number of training images: {k}', )
 
     def __len__(self):
         if self.aug_factor is not None:
