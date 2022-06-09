@@ -1,6 +1,5 @@
 import glob
 import os
-import logging
 
 import torch
 import torch.optim as optim
@@ -8,7 +7,7 @@ from barbar import Bar
 from biu.siam_unet import BCEDiceLoss
 from torch.utils.data import DataLoader, random_split
 
-from . import losses, logcoshTverskyLoss, TverskyLoss
+from . import logcoshTverskyLoss, TverskyLoss, weightedBCELoss
 from .predict import Predict
 from .siam_unet import Siam_UNet
 
@@ -16,7 +15,7 @@ device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
 class Trainer:
-    def __init__(self, dataset, num_epochs, batch_size=4, lr=1e-3, n_filter=32, val_split=0.2,
+    def __init__(self, dataset, num_epochs, batch_size=4, lr=1e-3, n_filter=32, mode='max', val_split=0.2,
                  save_dir='./', save_name='model.pth', save_iter=False, loss_function='BCEDice',
                  loss_params=(1, 1), load_weights=False):
         """
@@ -34,6 +33,8 @@ class Trainer:
             Learning rate
         n_filter : int
             Number of convolutional filters in first layer
+        mode : str
+            Mode to combine low-level features of T-1 and T ('max' or 'corr')
         val_split : float
             Validation split
         save_dir : str
@@ -50,13 +51,14 @@ class Trainer:
             Parameter of loss function, depends on chosen loss function
         """
 
-        self.model = Siam_UNet(n_filter=n_filter).to(device)
+        self.model = Siam_UNet(n_filter=n_filter, mode=mode).to(device)
 
         self.data = dataset
         self.num_epochs = num_epochs
         self.batch_size = batch_size
         self.lr = lr
         self.n_filter = n_filter
+        self.mode = mode
         self.best_loss = torch.tensor(float('inf'))
         self.save_iter = save_iter
         self.loss_function = loss_function
@@ -74,21 +76,23 @@ class Trainer:
             self.criterion = TverskyLoss(loss_params[0], loss_params[1])
         elif loss_function == 'logcoshTversky':
             self.criterion = logcoshTverskyLoss(loss_params[0], loss_params[1])
+        elif loss_function == 'weightedBCELoss':
+            self.criterion = weightedBCELoss(loss_params[0], loss_params[1])
         else:
-            raise ValueError(f'Loss "{loss_function}" not defined!')
+            raise ValueError(f'Loss function "{loss_function}" not defined!')
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 'min', patience=4, factor=0.1)
         self.save_dir = save_dir
         os.makedirs(self.save_dir, exist_ok=True)
         self.save_name = save_name
 
-        if load_weights:
-            self.state = torch.load(self.save_dir + '/' + self.save_name)
+        if load_weights is not None:
+            self.state = torch.load(load_weights)
             self.model.load_state_dict(self.state['state_dict'])
 
     def iterate(self, epoch, mode):
         if mode == 'train':
-            logging.info('\nStarting training epoch %s ...' % epoch)
+            print('\nStarting training epoch %s ...' % epoch)
             for i, batch_i in enumerate(Bar(self.train_loader)):
                 x_i = batch_i['image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                 prev_x_i = batch_i['prev_image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
@@ -104,7 +108,7 @@ class Trainer:
 
         elif mode == 'val':
             loss_list = []
-            logging.info('\nStarting validation epoch %s ...' % epoch)
+            print('\nStarting validation epoch %s ...' % epoch)
             with torch.no_grad():
                 for i, batch_i in enumerate(Bar(self.val_loader)):
                     x_i = batch_i['image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
@@ -132,6 +136,7 @@ class Trainer:
                 'loss': self.loss_function,
                 'loss_params': self.loss_params,
                 'n_filter': self.n_filter,
+                'mode': self.mode,
                 'augmentation': self.data.aug_factor,
                 'clip_threshold': self.data.clip_threshold,
                 'noise_amp': self.data.noise_amp,
@@ -142,17 +147,19 @@ class Trainer:
                 val_loss = self.iterate(epoch, 'val')
                 self.scheduler.step(val_loss)
             if val_loss < self.best_loss:
-                logging.info('\nValidation loss improved from %s to %s - saving model state' % (
-                    round(self.best_loss.item(), 5), round(val_loss.item(), 5)))
+                print(f'\nEpoch {epoch}: Validation loss improved from {round(self.best_loss.item(), 5)} to '
+                      f'{round(val_loss.item(), 5)} - saving model state')
                 self.state['best_loss'] = self.best_loss = val_loss
                 torch.save(self.state, self.save_dir + '/' + self.save_name)
+            else:
+                print(f'\nEpoch {epoch}: Validation loss did not improve from {round(self.best_loss.item(), 5)}')
             if self.save_iter:
                 torch.save(self.state, self.save_dir + '/' + f'model_epoch_{epoch}.pth')
 
             if test_data_path is not None:
+                os.makedirs(result_path, exist_ok=True)
                 files = glob.glob(test_data_path + '*.tif')
                 for i, file in enumerate(files):
                     Predict(file, result_path + os.path.basename(file) + f'epoch_{epoch}.tif',
                             self.save_dir + '/' + f'model_epoch_{epoch}.pth', resize_dim=test_resize_dim,
                             invert=False, n_filter=self.n_filter)
-
