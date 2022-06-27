@@ -9,7 +9,16 @@ from biu.progress import ProgressNotifier
 
 from .siam_unet import Siam_UNet
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+# select device
+if torch.has_cuda:
+    device = torch.device('cuda:0')
+elif hasattr(torch, 'has_mps'):  # only for apple m1/m2/...
+    if torch.has_mps:
+        device = torch.device('mps')
+    else:
+        device = torch.device('cpu')
+else:
+    device = torch.device('cpu')
 
 
 class Predict:
@@ -21,7 +30,7 @@ class Predict:
     4) Stitching of predicted patches and averaging of overlapping regions
     """
 
-    def __init__(self, tif_file, result_name, model_params, n_filter=32, resize_dim=(512, 512), invert=False,
+    def __init__(self, tif_file, result_name, model_params, resize_dim=(512, 512), invert=False,
                  clip_threshold=(0.0, 99.98), add_tile=0, normalize_result=False,
                  progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
         """
@@ -39,8 +48,6 @@ class Predict:
             path for result
         model_params : str
             path of u-net parameters (.pth file)
-        n_filter : int
-            Number of convolution filters
         resize_dim
             Image dimensions for resizing for prediction. If resize_dim=None, the image will not be resized but rather the whole image will be processed by the convolution layers.
         invert : bool
@@ -56,14 +63,13 @@ class Predict:
         """
         self.tif_file = tif_file
         self.add_tile = add_tile
-        self.n_filter = n_filter
         self.invert = invert
         self.clip_threshold = clip_threshold
         self.result_name = result_name
         self.normalize_result = normalize_result  # todo to be implemented for Siam-U-Net?
 
         # load model
-        self.model_params = torch.load(model_params)
+        self.model_params = torch.load(model_params, map_location=device)
         self.model = Siam_UNet(n_filter=self.model_params['n_filter'], mode=self.model_params['mode']).to(device)
         self.model.load_state_dict(self.model_params['state_dict'])
         self.model.eval()

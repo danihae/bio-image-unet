@@ -10,7 +10,16 @@ from .predict import Predict
 from .unet import Unet
 from .baby_unet import BabyUnet
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+# select device
+if torch.has_cuda:
+    device = torch.device('cuda:0')
+elif hasattr(torch, 'has_mps'):  # only for apple m1/m2/...
+    if torch.has_mps:
+        device = torch.device('mps')
+    else:
+        device = torch.device('cpu')
+else:
+    device = torch.device('cpu')
 
 
 class Trainer:
@@ -164,4 +173,4 @@ class Trainer:
                 for i, file in enumerate(files):
                     Predict(file, result_path + os.path.basename(file) + f'epoch_{epoch}.tif',
                             self.save_dir + '/' + f'model_epoch_{epoch}.pth', self.network, resize_dim=test_resize_dim,
-                            invert=False, n_filter=self.n_filter)
+                            invert=False)

@@ -9,12 +9,21 @@ from biu.progress import ProgressNotifier
 from .unet import Unet
 from .utils import save_as_tif
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+# select device
+if torch.has_cuda:
+    device = torch.device('cuda:0')
+elif hasattr(torch, 'has_mps'):  # only for apple m1/m2/...
+    if torch.has_mps:
+        device = torch.device('mps')
+    else:
+        device = torch.device('cpu')
+else:
+    device = torch.device('cpu')
 
 
 class Predict:
     """Class for prediction of movies and images with U-Net"""
-    def __init__(self, tif_file, result_name, model_params, network=Unet, n_filter=32, resize_dim=(512, 512),
+    def __init__(self, tif_file, result_name, model_params, network=Unet, resize_dim=(512, 512),
                  invert=False, frame_lim=None, clip_threshold=(0., 99.8), add_tile=0, normalize_result=False,
                  progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
         """
@@ -35,8 +44,6 @@ class Predict:
             path of u-net parameters (.pth file)
         network
             Network class
-        n_filter : int
-            Number of convolution filters
         resize_dim
             Image dimensions for resizing for prediction
         invert : bool
@@ -55,7 +62,6 @@ class Predict:
         self.tif_file = tif_file
         self.resize_dim = resize_dim
         self.add_tile = add_tile
-        self.n_filter = n_filter
         self.normalize_result = normalize_result
         self.invert = invert
         self.clip_threshold = clip_threshold
@@ -69,8 +75,9 @@ class Predict:
         del imgs
 
         # load model and predict data
-        self.model = network(n_filter=self.n_filter).to(device)
-        self.model.load_state_dict(torch.load(model_params, map_location=device)['state_dict'])
+        self.model_params = torch.load(model_params, map_location=device)
+        self.model = network(n_filter=self.model_params['n_filter']).to(device)
+        self.model.load_state_dict(self.model_params['state_dict'])
         self.model.eval()
         result_patches = self.__predict(patches, progress_notifier)
         del patches
