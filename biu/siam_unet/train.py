@@ -11,7 +11,13 @@ from . import logcoshTverskyLoss, TverskyLoss, weightedBCELoss
 from .predict import Predict
 from .siam_unet import Siam_UNet
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+# select device
+if torch.has_cuda:
+    device = torch.device('cuda:0')
+elif torch.has_mps:
+    device = torch.device('mps')
+else:
+    device = torch.device('cpu')
 
 
 class Trainer:

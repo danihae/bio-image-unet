@@ -9,7 +9,13 @@ from biu.progress import ProgressNotifier
 
 from .siam_unet import Siam_UNet
 
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
+# select device
+if torch.has_cuda:
+    device = torch.device('cuda:0')
+elif torch.has_mps:
+    device = torch.device('mps')
+else:
+    device = torch.device('cpu')
 
 
 class Predict:
@@ -63,7 +69,8 @@ class Predict:
         self.normalize_result = normalize_result  # todo to be implemented for Siam-U-Net?
 
         # load model
-        self.model_params = torch.load(model_params)
+        print(device)
+        self.model_params = torch.load(model_params, map_location=device)
         self.model = Siam_UNet(n_filter=self.model_params['n_filter'], mode=self.model_params['mode']).to(device)
         self.model.load_state_dict(self.model_params['state_dict'])
         self.model.eval()
