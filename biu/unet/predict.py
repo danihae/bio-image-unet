@@ -12,8 +12,11 @@ from .utils import save_as_tif
 # select device
 if torch.has_cuda:
     device = torch.device('cuda:0')
-elif torch.has_mps:
-    device = torch.device('mps')
+elif hasattr(torch, 'has_mps'):
+    if torch.has_mps:
+        device = torch.device('mps')
+    else:
+        device = torch.device('cpu')
 else:
     device = torch.device('cpu')
 
