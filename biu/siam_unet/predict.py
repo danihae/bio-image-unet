@@ -128,7 +128,7 @@ class Predict:
                     img = 255 - img
                 imgs[i] = img
         if len(imgs.shape) == 2:
-            imgs = np.clip(imgs, a_min=np.nanpercentile(imgs[imgs > 0], self.clip_threshold[0]),
+            imgs = np.clip(imgs, a_min=np.nanpercentile(imgs, self.clip_threshold[0]),
                            a_max=np.percentile(imgs, self.clip_threshold[1]))
             imgs = imgs - np.min(imgs)
             imgs = imgs / np.max(imgs) * 255
