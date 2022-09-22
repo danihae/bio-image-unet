@@ -26,7 +26,7 @@ else:
 class Trainer:
     def __init__(self, dataset, num_epochs, batch_size=4, lr=1e-3, n_filter=32, mode='max', val_split=0.2,
                  save_dir='./', save_name='model.pth', save_iter=False, loss_function='BCEDice',
-                 loss_params=(1, 1), load_weights=False):
+                 loss_params=(1, 1), load_weights=None):
         """
         Class for training of neural network. Creates trainer object, training is started with .start().
 

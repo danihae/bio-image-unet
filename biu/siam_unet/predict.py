@@ -120,15 +120,15 @@ class Predict:
     def __preprocess(self, imgs):
         if len(imgs.shape) == 3:
             for i, img in enumerate(imgs):
-                img = np.clip(img, a_min=np.nanpercentile(img, self.clip_threshold[0]),
-                              a_max=np.percentile(img, self.clip_threshold[1]))
+                img = np.clip(img, a_min=np.nanpercentile(img[img > 0], self.clip_threshold[0]),
+                              a_max=np.percentile(img[img > 0], self.clip_threshold[1]))
                 img = img - np.min(img)
                 img = img / np.max(img) * 255
                 if self.invert:
                     img = 255 - img
                 imgs[i] = img
         if len(imgs.shape) == 2:
-            imgs = np.clip(imgs, a_min=np.nanpercentile(imgs, self.clip_threshold[0]),
+            imgs = np.clip(imgs, a_min=np.nanpercentile(imgs[imgs > 0], self.clip_threshold[0]),
                            a_max=np.percentile(imgs, self.clip_threshold[1]))
             imgs = imgs - np.min(imgs)
             imgs = imgs / np.max(imgs) * 255
@@ -166,9 +166,9 @@ class Predict:
         for j in range(self.N_x):
             for k in range(self.N_y):
                 patches[n, 0, :, :] = imgs[i][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-                                        self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+                                      self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
                 patches[n, 1, :, :] = imgs[i - 1][self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-                                        self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
+                                      self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
                 n += 1
         return patches
 
