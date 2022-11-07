@@ -7,6 +7,7 @@ import biu.unet as unet
 import biu.siam_unet as siam
 
 # create test folder with random training and test data
+from biu.progress import ProgressNotifier
 
 folder = './temp_test/'
 folder_image = folder + 'training_data/image/'
@@ -52,9 +53,9 @@ train_siam.start()
 
 # predict movie
 unet.Predict(folder + 'movie.tif', result_name=folder_results + 'movie.tif',
-             model_params=folder + 'models_unet/model.pth', resize_dim=(64, 64))
+             model_params=folder + 'models_unet/model.pth', resize_dim=(64, 64),progress_notifier=ProgressNotifier())
 siam.Predict(folder + 'movie.tif', result_name=folder_results + 'movie.tif',
-             model_params=folder + 'models_siam/model.pth', resize_dim=(64, 64))
+             model_params=folder + 'models_siam/model.pth', resize_dim=(64, 64),progress_notifier=ProgressNotifier())
 
 # delete test folder
 # shutil.rmtree(folder)

@@ -37,6 +37,14 @@ class ProgressNotifier:
         notifier.__use_tqdm = True
         return notifier
 
+    @staticmethod
+    def silent_notifier():
+        """
+        returns a progress notifier that is silent (no progress notifications)
+        used for the case a method requires a progress notifier but we do not want to show anything
+        """
+        return ProgressNotifier()
+
     def iterator(self, iterateable):
         # check if it is iterable
         try:
@@ -70,7 +78,7 @@ class ProgressNotifier:
         # this var doesn't have to be set
 
     class __IteratorWrapper:
-        # this is a class variable (in java like static
+        # this is a class variable (in java like static)
         timeMultiplier = 1000  # time values in milli seconds
 
         def __init__(self, iterable, task_progress, task_progress_details=None):
