@@ -24,7 +24,8 @@ else:
 class Predict:
     """Class for prediction of movies and images with U-Net"""
     def __init__(self, tif_file, result_name, model_params, network=Unet, resize_dim=(512, 512),
-                 invert=False, frame_lim=None, clip_threshold=(0., 99.8), add_tile=0, normalize_result=False,
+                 invert=False, frame_lim=None, normalization_mode='single', clip_threshold=(0., 99.8), add_tile=0,
+                 normalize_result=False, progress_bar=True,
                  progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
         """
         Prediction of tif files with standard 2D U-Net
@@ -50,6 +51,9 @@ class Predict:
             Invert greyscale of image(s) before prediction
         frame_lim : Tuple[int, int], optional
             If not None, predict only interval
+        normalization_mode : str
+            Mode for intensity normalization for 3D stacks prior to prediction ('single': each image individually,
+            'all': based on histogram of full stack, 'first': based on histogram of first image in stack)
         clip_threshold : Tuple[float, float]
             Clip threshold for image intensity before prediction
         add_tile : int, optional
@@ -64,9 +68,11 @@ class Predict:
         self.add_tile = add_tile
         self.normalize_result = normalize_result
         self.invert = invert
+        self.normalization_mode = normalization_mode
         self.clip_threshold = clip_threshold
         self.frame_lim = frame_lim
         self.result_name = result_name
+        self.progress_bar = progress_bar
 
         # read, preprocess and split data
         imgs = self.__read_data()
@@ -99,14 +105,33 @@ class Predict:
 
     def __preprocess(self, imgs):
         if len(imgs.shape) == 3:
-            for i, img in enumerate(imgs):
-                img = np.clip(img, a_min=np.nanpercentile(img, self.clip_threshold[0]),
-                              a_max=np.percentile(img, self.clip_threshold[1]))
-                img = img - np.min(img)
-                img = img / np.max(img) * 255
+            if self.normalization_mode == 'single':
+                for i, img in enumerate(imgs):
+                    img = np.clip(img, a_min=np.nanpercentile(img, self.clip_threshold[0]),
+                                  a_max=np.percentile(img, self.clip_threshold[1]))
+                    img = img - np.min(img)
+                    img = img / np.max(img) * 255
+                    if self.invert:
+                        img = 255 - img
+                    imgs[i] = img
+            elif self.normalization_mode == 'first':
+                clip_threshold = (np.nanpercentile(imgs[0], self.clip_threshold[0]),
+                                  np.percentile(imgs[0], self.clip_threshold[1]))
+                imgs = np.clip(imgs, clip_threshold[0], clip_threshold[1])
+                imgs = imgs - np.min(imgs)
+                imgs = imgs / np.max(imgs) * 255
                 if self.invert:
-                    img = 255 - img
-                imgs[i] = img
+                    imgs = 255 - imgs
+            elif self.normalization_mode == 'all':
+                clip_threshold = (np.nanpercentile(imgs, self.clip_threshold[0]),
+                                  np.percentile(imgs, self.clip_threshold[1]))
+                imgs = np.clip(imgs, clip_threshold[0], clip_threshold[1])
+                imgs = imgs - np.min(imgs)
+                imgs = imgs / np.max(imgs) * 255
+                if self.invert:
+                    imgs = 255 - imgs
+            else:
+                raise ValueError(f'normalization_mode {self.normalization_mode} not valid!')
         if len(imgs.shape) == 2:
             imgs = np.clip(imgs, a_min=np.nanpercentile(imgs, self.clip_threshold[0]),
                            a_max=np.percentile(imgs, self.clip_threshold[1]))
