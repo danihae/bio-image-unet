@@ -8,7 +8,8 @@ Implementations of U-Net and Siam U-Net for biological image segmentation
 Andreas Primeßnig
 
 ### Installation
-Install from [PyPI](https://pypi.org/project/bio-image-unet/): `pip install bio-image-unet`
+Install with ``pip install git+https://github.com/danihae/bio-image-unet``
+
 
 ### Usage example
 [iPython Notebook for getting started with U-Net](https://github.com/danihae/bio-image-unet/blob/master/using_unet.ipynb) \
