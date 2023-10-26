@@ -23,8 +23,9 @@ def save_as_tif(imgs, filename, normalize=False):
         imgs /= np.nanmax(imgs)
         imgs *= 255
     imgs = imgs.astype('uint8')
-    tifffile.imsave(filename, imgs)
+    tifffile.write(filename, imgs)
     print('Saving prediction results as %s' % filename)
+
 
 class AddBias(nn.Module):
     """Add scalar to tensor"""
