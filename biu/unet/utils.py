@@ -23,7 +23,7 @@ def save_as_tif(imgs, filename, normalize=False):
         imgs /= np.nanmax(imgs)
         imgs *= 255
     imgs = imgs.astype('uint8')
-    tifffile.write(filename, imgs)
+    tifffile.imwrite(filename, imgs)
     print('Saving prediction results as %s' % filename)
 
 
