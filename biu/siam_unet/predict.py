@@ -8,17 +8,10 @@ from tqdm import tqdm as tqdm
 from biu.progress import ProgressNotifier
 
 from .siam_unet import Siam_UNet
+from ..utils import get_device
 
 # select device
-if torch.has_cuda:
-    device = torch.device('cuda:0')
-elif hasattr(torch, 'has_mps'):  # only for apple m1/m2/...
-    if torch.has_mps:
-        device = torch.device('mps')
-    else:
-        device = torch.device('cpu')
-else:
-    device = torch.device('cpu')
+device = get_device()
 
 
 class Predict:

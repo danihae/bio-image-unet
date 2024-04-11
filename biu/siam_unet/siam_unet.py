@@ -6,7 +6,7 @@ import logging
 
 class Siam_UNet(nn.Module):
     """Implementation of Siamese U-Net inspired by Dunnhofer et al. https://doi.org/10.1016/j.media.2019.101631"""
-    def __init__(self, n_filter=32, mode='max'):
+    def __init__(self, n_filter=32, mode='concat'):
         super().__init__()
         # mode for combining T-1 and T
         self.mode = mode
@@ -21,12 +21,14 @@ class Siam_UNet(nn.Module):
         self.encode6 = self.conv(4 * n_filter, 4 * n_filter)
         self.maxpool3 = nn.MaxPool2d(kernel_size=2, stride=2)
         self.encode7 = self.conv(4 * n_filter, 8 * n_filter)
-        self.encode8 = self.conv(8 * n_filter, 8 * n_filter, dropout=0.5)
+        self.encode8 = self.conv(8 * n_filter, 8 * n_filter)
         self.maxpool4 = nn.MaxPool2d(kernel_size=2, stride=2)
 
         # middle
+        if mode == 'concat':
+            self.conv_concat = self.conv(16 * n_filter, 8 * n_filter)
         self.middle_conv1 = self.conv(8 * n_filter, 16 * n_filter)
-        self.middle_conv2 = self.conv(16 * n_filter, 16 * n_filter, dropout=0.5)
+        self.middle_conv2 = self.conv(16 * n_filter, 16 * n_filter)
 
         # decode
         self.up1 = nn.ConvTranspose2d(16 * n_filter, 8 * n_filter, kernel_size=2, stride=2)
@@ -41,19 +43,17 @@ class Siam_UNet(nn.Module):
         self.up4 = nn.ConvTranspose2d(2 * n_filter, 1 * n_filter, kernel_size=2, stride=2)
         self.decode7 = self.conv(2 * n_filter, 1 * n_filter)
         self.decode8 = self.conv(1 * n_filter, 1 * n_filter)
-        self.decode9 = self.conv(1 * n_filter, 1)
         self.final = nn.Sequential(
-            nn.Conv2d(1, 1, kernel_size=1, padding=0),
+            nn.Conv2d(n_filter, 1, kernel_size=1, padding=0),
         )
 
-    def conv(self, in_channels, out_channels, kernel_size=3, dropout=0.0):
-        block = nn.Sequential(
-            nn.Conv2d(kernel_size=kernel_size, in_channels=in_channels, out_channels=out_channels, padding=1),
+    def conv(self, in_channels, out_channels, kernel_size=3, dropout=0., dilation=1):
+        layers = [
+            nn.Conv2d(in_channels, out_channels, kernel_size, padding=dilation, dilation=dilation),
             nn.BatchNorm2d(out_channels),
-            nn.ReLU(),
-            nn.Dropout2d(dropout)
-        )
-        return block
+            nn.LeakyReLU(negative_slope=0.1, inplace=True),  # Using LeakyReLU
+            nn.Dropout2d(dropout)]
+        return nn.Sequential(*layers)
 
     def concat(self, x1, x2):
         if x1.shape == x2.shape:
@@ -102,32 +102,38 @@ class Siam_UNet(nn.Module):
         me8 = self.encode8(me7)
         mm4 = self.maxpool2(me8)
 
-        # depth-wise cross-correlation or element-wise maximum
         if self.mode == 'corr':
-            corr = self.depthwise_xcorr(m4, mm4)
+            join = self.depthwise_xcorr(m4, mm4)
         elif self.mode == 'max':
-            corr = torch.maximum(m4, mm4)
-        # mid layer
-        mid1 = self.middle_conv1(corr)
+            join = torch.maximum(m4, mm4)
+        elif self.mode == 'concat':
+            conc = self.concat(m4, mm4)
+            join = self.conv_concat(conc)
+        elif self.mode == 'control':
+            join = m4
+        else:
+            raise NotImplementedError('Unknown mode: {}'.format(self.mode))
+
+        # bottleneck
+        mid1 = self.middle_conv1(join)
         mid2 = self.middle_conv2(mid1)
 
         # decoder
         u1 = self.up1(mid2)
-        c1 = self.concat(u1, e7)
+        c1 = self.concat(u1, e8)
         d1 = self.decode1(c1)
         d2 = self.decode2(d1)
         u2 = self.up2(d2)
-        c2 = self.concat(u2, e5)
+        c2 = self.concat(u2, e6)
         d3 = self.decode3(c2)
         d4 = self.decode4(d3)
         u3 = self.up3(d4)
-        c3 = self.concat(u3, e3)
+        c3 = self.concat(u3, e4)
         d5 = self.decode5(c3)
         d6 = self.decode6(d5)
         u4 = self.up4(d6)
-        c4 = self.concat(u4, e1)
+        c4 = self.concat(u4, e2)
         d7 = self.decode7(c4)
         d8 = self.decode8(d7)
-        d9 = self.decode9(d8)
-        logits = self.final(d9)
+        logits = self.final(d8)
         return torch.sigmoid(logits), logits

@@ -1,31 +1,24 @@
 import glob
 import os
 
+import tifffile
 import torch.optim as optim
-from barbar import Bar
 from torch.utils.data import DataLoader, random_split
+from tqdm import tqdm
 
 from .losses import *
 from .predict import Predict
 from .unet import Unet
-from .baby_unet import BabyUnet
+from ..utils import init_weights, get_device
 
-# select device
-if torch.has_cuda:
-    device = torch.device('cuda:0')
-elif hasattr(torch, 'has_mps'):  # only for apple m1/m2/...
-    if torch.has_mps:
-        device = torch.device('mps')
-    else:
-        device = torch.device('cpu')
-else:
-    device = torch.device('cpu')
+# get device
+device = get_device()
 
 
 class Trainer:
-    def __init__(self, dataset, num_epochs, network=Unet, batch_size=4, lr=1e-3, n_filter=64, val_split=0.2,
-                 save_dir='./', save_name='model.pth', save_iter=False, load_weights=False, loss_function='BCEDice',
-                 loss_params=(0.5, 0.5)):
+    def __init__(self, dataset, num_epochs, network=Unet, batch_size=4, lr=1e-3, in_channels=1, out_channels=1,
+                 channel_weights=None, n_filter=64, dilation=1, val_split=0.2, save_dir='./', save_name='model.pth',
+                 save_iter=False, load_weights=False, loss_function='BCEDice', loss_params=(0.5, 0.5)):
         """
         Class for training of neural network. Creates trainer object, training is started with .start().
 
@@ -41,6 +34,12 @@ class Trainer:
             Batch size for training
         lr : float
             Learning rate
+        in_channels : int
+            Number of input channels
+        out_channels : int
+            Number of output channels
+        channel_weights : list
+            List of loss weights for each channel
         n_filter : int
             Number of convolutional filters in first layer
         val_split : float
@@ -59,7 +58,9 @@ class Trainer:
             Parameter of loss function, depends on chosen loss function
         """
         self.network = network
-        self.model = network(n_filter=n_filter).to(device)
+        self.model = network(n_filter=n_filter, in_channels=in_channels, out_channels=out_channels,
+                             dilation=dilation).to(device)
+        self.model.apply(init_weights)
         self.data = dataset
         self.num_epochs = num_epochs
         self.batch_size = batch_size
@@ -69,6 +70,13 @@ class Trainer:
         self.loss_function = loss_function
         self.loss_params = loss_params
         self.n_filter = n_filter
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        if channel_weights is None:
+            self.channel_weights = torch.ones(out_channels)
+        else:
+            self.channel_weights = torch.tensor(channel_weights)
+
         # split training and validation data
         num_val = int(len(dataset) * val_split)
         num_train = len(dataset) - num_val
@@ -85,10 +93,22 @@ class Trainer:
         else:
             raise ValueError(f'Loss "{loss_function}" not defined!')
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, 'min', patience=4, factor=0.1)
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', patience=4, factor=0.1)
         self.save_dir = save_dir
         os.makedirs(self.save_dir, exist_ok=True)
         self.save_name = save_name
+        self.params = {'optimizer': self.optimizer.state_dict(),
+                       'lr': self.lr,
+                       'loss_function': self.loss_function,
+                       'loss_params': self.loss_params,
+                       'n_filter': self.n_filter,
+                       'dilation': dilation, 'batch_size': self.batch_size,
+                       'augmentation': self.data.aug_factor,
+                       'clip_threshold': self.data.clip_threshold,
+                       'noise_amp': self.data.noise_amp,
+                       'brightness_contrast': self.data.brightness_contrast,
+                       'shiftscalerotate': self.data.shiftscalerotate,
+                       'in_channels': in_channels, 'out_channels': out_channels}
         if load_weights:
             self.state = torch.load(self.save_dir + '/' + self.save_name)
             self.model.load_state_dict(self.state['state_dict'])
@@ -96,14 +116,15 @@ class Trainer:
     def __iterate(self, epoch, mode):
         if mode == 'train':
             print('\nStarting training epoch %s ...' % epoch)
-            for i, batch_i in enumerate(Bar(self.train_loader)):
-                x_i = batch_i['image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
-                y_i = batch_i['mask'].view(self.batch_size, 1, self.dim[0], self.dim[0]).to(device)
+            for i, batch_i in tqdm(enumerate(self.train_loader), total=len(self.train_loader), unit='batch'):
+                x_i = batch_i['image'].view(self.batch_size, self.in_channels, self.dim[0], self.dim[1]).to(device)
+                y_i = batch_i['mask'].view(self.batch_size, self.out_channels, self.dim[0], self.dim[0]).to(device)
                 # Forward pass: Compute predicted y by passing x to the model
                 y_pred, y_logits = self.model(x_i)
 
-                # Compute and print loss
-                loss = self.criterion(y_logits, y_i)
+                # Compute loss
+                loss = sum([self.criterion(y_logits[ch], y_i[ch]) * self.channel_weights[j] for j, ch in
+                            enumerate(range(self.out_channels))]) / sum(self.channel_weights)
 
                 # Zero gradients, perform a backward pass, and update the weights.
                 self.optimizer.zero_grad()
@@ -114,13 +135,15 @@ class Trainer:
             loss_list = []
             print('\nStarting validation epoch %s ...' % epoch)
             with torch.no_grad():
-                for i, batch_i in enumerate(Bar(self.val_loader)):
-                    x_i = batch_i['image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
-                    y_i = batch_i['mask'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
+                for i, batch_i in tqdm(enumerate(self.val_loader), total=len(self.val_loader), unit='batch'):
+                    x_i = batch_i['image'].view(self.batch_size, self.in_channels, self.dim[0], self.dim[1]).to(device)
+                    y_i = batch_i['mask'].view(self.batch_size, self.out_channels, self.dim[0], self.dim[1]).to(device)
                     # Forward pass: Compute predicted y by passing x to the model
                     y_pred, y_logits = self.model(x_i)
-                    loss = self.criterion(y_logits, y_i)
-                    loss_list.append(loss.detach())
+                    # Compute loss
+                    loss = sum([self.criterion(y_logits[ch], y_i[ch]) * self.channel_weights[j] for j, ch in
+                                enumerate(range(self.out_channels))]) / sum(self.channel_weights)
+                loss_list.append(loss.detach())
             val_loss = torch.stack(loss_list).mean()
             return val_loss
 
@@ -144,18 +167,8 @@ class Trainer:
             self.state = {
                 'epoch': epoch,
                 'best_loss': self.best_loss,
-                'state_dict': self.model.state_dict(),
-                'optimizer': self.optimizer.state_dict(),
-                'lr': self.lr,
-                'loss_function': self.loss_function,
-                'loss_params': self.loss_params,
-                'n_filter': self.n_filter,
-                'augmentation': self.data.aug_factor,
-                'clip_threshold': self.data.clip_threshold,
-                'noise_amp': self.data.noise_amp,
-                'brightness_contrast': self.data.brightness_contrast,
-                'shiftscalerotate': self.data.shiftscalerotate,
-            }
+                'state_dict': self.model.state_dict()}
+            self.state.update(self.params)
             with torch.no_grad():
                 val_loss = self.__iterate(epoch, 'val')
                 self.scheduler.step(val_loss)
@@ -168,9 +181,11 @@ class Trainer:
                 torch.save(self.state, self.save_dir + '/' + f'model_epoch_{epoch}.pth')
 
             if test_data_path is not None:
-                print('Predicting test data...')
+                print('\nPredicting test data...')
                 files = glob.glob(test_data_path + '*.tif')
                 for i, file in enumerate(files):
-                    Predict(file, result_path + os.path.basename(file) + f'epoch_{epoch}.tif',
+                    img = tifffile.imread(file)
+                    Predict(img, result_path + os.path.basename(file) + f'epoch_{epoch}.tif',
                             self.save_dir + '/' + f'model_epoch_{epoch}.pth', self.network, resize_dim=test_resize_dim,
-                            invert=False)
+                            invert=False, progress_bar=False)
+

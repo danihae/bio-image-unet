@@ -7,7 +7,6 @@ from .data import DataProcess
 from .train import Trainer
 from .predict import Predict
 from .unet import Unet
-from .baby_unet import BabyUnet
+from .attention_unet import AttentionUnet
 from .losses import *
-from .utils import *
 

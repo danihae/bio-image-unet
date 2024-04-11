@@ -3,24 +3,18 @@ import os
 
 import torch
 import torch.optim as optim
-from barbar import Bar
+from tqdm import tqdm
+
 from biu.siam_unet import BCEDiceLoss
 from torch.utils.data import DataLoader, random_split
 
 from . import logcoshTverskyLoss, TverskyLoss, weightedBCELoss
 from .predict import Predict
 from .siam_unet import Siam_UNet
+from ..utils import get_device
 
 # select device
-if torch.has_cuda:
-    device = torch.device('cuda:0')
-elif hasattr(torch, 'has_mps'):  # only for apple m1/m2/...
-    if torch.has_mps:
-        device = torch.device('mps')
-    else:
-        device = torch.device('cpu')
-else:
-    device = torch.device('cpu')
+device = get_device()
 
 
 class Trainer:
@@ -102,7 +96,7 @@ class Trainer:
     def iterate(self, epoch, mode):
         if mode == 'train':
             print('\nStarting training epoch %s ...' % epoch)
-            for i, batch_i in enumerate(Bar(self.train_loader)):
+            for i, batch_i in tqdm(enumerate(self.train_loader), total=len(self.train_loader), unit='batch'):
                 x_i = batch_i['image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                 prev_x_i = batch_i['prev_image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                 y_i = batch_i['mask'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
@@ -119,7 +113,7 @@ class Trainer:
             loss_list = []
             print('\nStarting validation epoch %s ...' % epoch)
             with torch.no_grad():
-                for i, batch_i in enumerate(Bar(self.val_loader)):
+                for i, batch_i in tqdm(enumerate(self.val_loader), total=len(self.val_loader), unit='batch'):
                     x_i = batch_i['image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                     prev_x_i = batch_i['prev_image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
                     y_i = batch_i['mask'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
