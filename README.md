@@ -2,19 +2,15 @@
 
 Implementations of U-Net and Siam U-Net for biological image segmentation
 
-### Authors
-[Daniel Härtter](daniel.haertter@duke.edu) (Duke University, University of Göttingen) \
-[Yuxi Long](longyuxi@live.com) (Duke University) \
-Andreas Primeßnig
 
-### Installation
-Install with ``pip install git+https://github.com/danihae/bio-image-unet``
+## Installation
+### PyPI
+``pip install bio-image-unet``
+### GitHub
+``pip install git+https://github.com/danihae/bio-image-unet``
 
+## Usage example
+Import package with ``import biu``
 
-### Usage example
 [iPython Notebook for getting started with U-Net](https://github.com/danihae/bio-image-unet/blob/master/using_unet.ipynb) \
 [iPython Notebook for getting started with Siam U-Net](https://github.com/danihae/bio-image-unet/blob/master/using_siam_unet.ipynb)
-
-### Documentation
-
-TBD
