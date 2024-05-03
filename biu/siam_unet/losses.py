@@ -2,7 +2,6 @@ import torch
 from torch import nn as nn
 
 
-# adapted from https://github.com/achaiah/pywick/blob/master/pywick/losses.py
 class BCEDiceLoss(nn.Module):
     def __init__(self, alpha, beta):
         super(BCEDiceLoss, self).__init__()

@@ -2,6 +2,7 @@ import glob
 import os
 
 import torch
+import torch.nn as nn
 import torch.optim as optim
 from tqdm import tqdm
 
@@ -165,4 +166,4 @@ class Trainer:
                 for i, file in enumerate(files):
                     Predict(file, result_path + os.path.basename(file) + f'epoch_{epoch}.tif',
                             self.save_dir + '/' + f'model_epoch_{epoch}.pth', resize_dim=test_resize_dim,
-                            invert=False)
+                            invert=False, show_progress=False)

@@ -5,7 +5,6 @@ import logging
 
 
 class Siam_UNet(nn.Module):
-    """Implementation of Siamese U-Net inspired by Dunnhofer et al. https://doi.org/10.1016/j.media.2019.101631"""
     def __init__(self, n_filter=32, mode='concat'):
         super().__init__()
         # mode for combining T-1 and T

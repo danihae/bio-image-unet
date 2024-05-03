@@ -25,7 +25,7 @@ class Predict:
 
     def __init__(self, tif_file, result_name, model_params, resize_dim=(512, 512), invert=False,
                  normalization_mode='single', clip_threshold=(0.0, 99.98), add_tile=0, normalize_result=False,
-                 progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
+                 show_progress=True, progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
         """
         Predicts a tif movie
 
@@ -35,10 +35,6 @@ class Predict:
             Path to input tif stack
         result_name : str
             Path of result file
-        tif_file : str
-            path of tif file
-        result_name : str
-            path for result
         model_params : str
             path of u-net parameters (.pth file)
         resize_dim
@@ -55,6 +51,8 @@ class Predict:
             Add additional tiles for splitting large images to increase overlap
         normalize_result : bool
             If True, results are normalized to [0, 255]
+        show_progress : bool
+            Whether to show progress bar and resize shape.
         progress_notifier:
             Wrapper to show tqdm progress notifier in gui
         """
@@ -65,6 +63,7 @@ class Predict:
         self.clip_threshold = clip_threshold
         self.result_name = result_name
         self.normalize_result = normalize_result  # todo to be implemented for Siam-U-Net?
+        self.show_progress = show_progress
 
         # load model
         self.model_params = torch.load(model_params, map_location=device)
@@ -95,9 +94,13 @@ class Predict:
 
         # predict each pair, and save the output of each one as a separate image
         os.makedirs(temp_dir, exist_ok=True)
-        print('Predicting data ...')
+        print('Predicting data ...') if self.show_progress else None
         with tifffile.TiffWriter(self.result_name, bigtiff=False) as tif:
-            for i, _ in enumerate(self.progress_notifier.iterator(range(self.tif_len))):
+            if self.show_progress:
+                iter = self.progress_notifier.iterator(range(self.tif_len))
+            else:
+                iter = range(self.tif_len)
+            for i, _ in enumerate(iter):
                 if i == 0:
                     if self.tif_len == 1:
                         prev_img = tifffile.imread(self.tif_file, key=0)
@@ -110,7 +113,7 @@ class Predict:
                 img_stack = np.array([prev_img, current_img])
                 img_stack = self.__preprocess(img_stack)
                 patches = self.__split(img_stack)
-                print(f'Patches shape:{patches.shape}') if i == 0 else None
+                print(f'Patches shape:{patches.shape}') if i == 0 and self.show_progress else None
                 result_patches = self.__predict(patches)
                 imgs_result = self.__stitch(result_patches)
                 tif.write(imgs_result, contiguous=True)
