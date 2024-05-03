@@ -9,6 +9,7 @@ from tqdm import tqdm
 from .losses import *
 from .predict import Predict
 from .unet import Unet
+from .attention_unet import AttentionUnet
 from ..utils import init_weights, get_device
 
 # get device
@@ -187,5 +188,5 @@ class Trainer:
                     img = tifffile.imread(file)
                     Predict(img, result_path + os.path.basename(file) + f'epoch_{epoch}.tif',
                             self.save_dir + '/' + f'model_epoch_{epoch}.pth', self.network, resize_dim=test_resize_dim,
-                            invert=False, progress_bar=False)
+                            invert=False, show_progress=False)
 

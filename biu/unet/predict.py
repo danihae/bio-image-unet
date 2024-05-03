@@ -4,6 +4,7 @@ import torch
 
 from ..progress import ProgressNotifier
 from .unet import Unet
+from .attention_unet import AttentionUnet
 from ..utils import save_as_tif, get_device
 
 # select device
@@ -13,9 +14,9 @@ device = get_device()
 class Predict:
     """Class for prediction of movies and images with U-Net"""
 
-    def __init__(self, imgs, result_name, model_params, network=Unet, resize_dim=(512, 512),
+    def __init__(self, imgs, result_name, model_params, network='Unet', resize_dim=(512, 512),
                  invert=False, normalization_mode='single', clip_threshold=(0., 99.8), add_tile=0,
-                 normalize_result=False, progress_bar=True,
+                 normalize_result=False, show_progress=True,
                  progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
         """
         Prediction of tif files with standard 2D U-Net
@@ -48,6 +49,8 @@ class Predict:
             Add additional tiles for splitting large images to increase overlap
         normalize_result : bool
             If true, results are normalized to [0, 255]
+        show_progress : bool
+            Whether to show progress bar.
         progress_notifier:
             Wrapper to show tqdm progress notifier in gui
         """
@@ -61,7 +64,7 @@ class Predict:
         self.normalization_mode = normalization_mode
         self.clip_threshold = clip_threshold
         self.result_name = result_name
-        self.progress_bar = progress_bar
+        self.show_progress = show_progress
 
         # read, preprocess and split data
         imgs = self.__reshape_data(imgs)
@@ -70,6 +73,10 @@ class Predict:
         del imgs
 
         # load model and predict data
+        if network == 'Unet':
+            network = Unet
+        elif network == 'AttentionUnet':
+            network = AttentionUnet
         self.model_params = torch.load(model_params, map_location=device)
         self.model = network(n_filter=self.model_params['n_filter'], in_channels=self.model_params['in_channels'],
                              out_channels=self.model_params['out_channels']).to(device)
@@ -156,9 +163,9 @@ class Predict:
     def __predict(self, patches, progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
         result_patches = np.zeros((patches.shape[0], self.model_params['out_channels'], *patches.shape[2:]),
                                   dtype='uint8')
-        print('Predicting data ...') if self.progress_bar else None
+        print('Predicting data ...') if self.show_progress else None
         with torch.no_grad():
-            _progress_notifier = enumerate(progress_notifier.iterator(patches)) if self.progress_bar else enumerate(
+            _progress_notifier = enumerate(progress_notifier.iterator(patches)) if self.show_progress else enumerate(
                 patches)
             for i, patch_i in _progress_notifier:
                 patch_i = torch.from_numpy(patch_i.astype('float32') / 255).to(device).view((1,

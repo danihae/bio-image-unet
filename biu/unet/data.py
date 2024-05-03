@@ -144,10 +144,8 @@ class DataProcess(Dataset):
                 mask_i = np.expand_dims(mask_i, 0)
             for j, ch_j in enumerate(mask_i):  # iterate channels
                 if self.skeletonize:
-                    ch_j[ch_j > 1] = 1
-                    ch_j = 1 - ch_j
-                    ch_j = morphology.skeletonize(ch_j)
-                    ch_j = 255 * (1 - ch_j)
+                    ch_j = ch_j > 1
+                    ch_j = morphology.skeletonize(ch_j) * 255
                 if self.dilate_kernel == 'disk':
                     kernel = morphology.disk
                 elif self.dilate_kernel == 'square':
@@ -238,7 +236,7 @@ class DataProcess(Dataset):
             masks_aug_i = np.asarray([data_aug_i[j]['mask'] for j in range(self.aug_factor)])
 
             for j in range(self.aug_factor):
-                tifffile.imwrite(self.aug_image_path + f'{k}.tif', imgs_aug_i[j])
+                tifffile.imwrite(self.aug_image_path + f'{k}.tif', np.moveaxis(imgs_aug_i[j], 2, 0))
                 tifffile.imwrite(self.aug_mask_path + f'{k}.tif', np.moveaxis(masks_aug_i[j], 2, 0))
                 k += 1
         print(f'Number of training images: {k}')

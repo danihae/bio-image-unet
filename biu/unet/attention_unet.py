@@ -112,7 +112,7 @@ class AttentionUnet(nn.Module):
 
 class AttentionBlock(nn.Module):
     """
-    Implements an attention block with learnable parameters for focusing on relevant features.
+    Attention block with learnable parameters for focusing on relevant features.
 
     Parameters
     ----------
