@@ -1,6 +1,6 @@
 # Bio Image U-Net
 
-Implementations of U-Net and Siam U-Net for biological image segmentation
+Implementations of U-Net, Siam U-Net and 3D U-Net for biological image segmentation
 
 
 ## Installation
