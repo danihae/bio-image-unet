@@ -158,7 +158,7 @@ class Predict:
 
     def __stitch(self, result_patches):
         # create array
-        _vol_result = np.zeros(shape=(self.N, max(self.vol_shape[0], self.resize_dim[0]),
+        _vol_result = np.zeros(shape=(3, max(self.vol_shape[0], self.resize_dim[0]),
                                       max(self.resize_dim[1], self.vol_shape[1]),
                                       max(self.resize_dim[2], self.vol_shape[2])), dtype='float16') * np.nan
 
@@ -166,7 +166,7 @@ class Predict:
         for i in range(self.N_z):
             for j in range(self.N_x):
                 for k in range(self.N_y):
-                    _vol_result[n,
+                    _vol_result[np.mod(n, 3),
                     self.Z_start[i]:self.Z_start[i] + self.resize_dim[0],
                     self.X_start[j]:self.X_start[j] + self.resize_dim[1],
                     self.Y_start[k]:self.Y_start[k] + self.resize_dim[2]] = result_patches[n]
