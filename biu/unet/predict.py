@@ -4,6 +4,7 @@ import torch
 
 from ..progress import ProgressNotifier
 from .unet import Unet
+from .unet_v0 import Unet_v0
 from .attention_unet import AttentionUnet
 from ..utils import save_as_tif, get_device
 
@@ -73,23 +74,37 @@ class Predict:
         del imgs
 
         # load model and predict data
+        self.model_params = torch.load(model_params, map_location=device)
+        if network is None:
+            if 'network' in self.model_params.keys():
+                network = self.model_params['network']
+            else:
+                raise ValueError('network is not defined')
         if network == 'Unet':
             network = Unet
         elif network == 'AttentionUnet':
             network = AttentionUnet
-        self.model_params = torch.load(model_params, map_location=device)
+        elif network == 'Unet_v0':
+            network = Unet_v0
+            if 'in_channels' not in self.model_params.keys():
+                self.model_params['in_channels'] = 1
+                self.model_params['out_channels'] = 1
         self.model = network(n_filter=self.model_params['n_filter'], in_channels=self.model_params['in_channels'],
                              out_channels=self.model_params['out_channels']).to(device)
         self.model.load_state_dict(self.model_params['state_dict'])
         self.model.eval()
         result_patches = self.__predict(patches, progress_notifier)
-        del patches
+        del patches, self.model
+
         # stitch patches (mean of overlapped regions)
         imgs_result = self.__stitch(result_patches)
-        del result_patches
+        del result_patches, self.model_params
 
         # save as .tif file
         save_as_tif(imgs_result, self.result_name, normalize=normalize_result)
+        del imgs_result
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def __reshape_data(self, imgs):
         self.imgs_shape = imgs.shape
@@ -200,6 +215,7 @@ class Predict:
 
             # average overlapping regions
             imgs_result[i] = np.nanmean(stack_result_i, axis=0)
+            del stack_result_i
 
         # change to input size (if zero padding)
         imgs_result = imgs_result[:, :, :self.imgs_shape[1], :self.imgs_shape[2]]

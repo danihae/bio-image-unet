@@ -3,7 +3,7 @@ import os
 import shutil
 from skimage import morphology
 from albumentations import (
-    ShiftScaleRotate, GaussNoise,
+    ShiftScaleRotate, Blur, MultiplicativeNoise,
     RandomBrightnessContrast, Flip, Compose, RandomRotate90)
 
 import numpy as np
@@ -18,7 +18,7 @@ class DataProcess(Dataset):
     def __init__(self, source_dir, dim_out=(256, 256), aug_factor=10, data_path='../data/', in_channels=1,
                  out_channels=1, dilate_mask=0, dilate_kernel='disk', add_tile=0,
                  val_split=0.2, invert=False, skeletonize=False, clip_threshold=(0.2, 99.8), shiftscalerotate=(0, 0, 0),
-                 noise_amp=10, brightness_contrast=(0.25, 0.25), rescale=None, create=True):
+                 noise_lims=(0.5, 1.2), brightness_contrast=(0.25, 0.25), blur_limit=(2, 7), rescale=None, create=True):
         """
         Create training data object for network training
 
@@ -80,9 +80,10 @@ class DataProcess(Dataset):
         self.aug_factor = aug_factor
         self.shiftscalerotate = shiftscalerotate
         self.brightness_contrast = brightness_contrast
-        self.noise_amp = noise_amp
+        self.noise_lims = noise_lims
         self.dilate_mask = dilate_mask
         self.dilate_kernel = dilate_kernel
+        self.blur_limit = blur_limit
         self.val_split = val_split
         self.mode = 'train'
 
@@ -216,9 +217,10 @@ class DataProcess(Dataset):
             Flip(),
             RandomRotate90(p=1.0),
             ShiftScaleRotate(self.shiftscalerotate[0], self.shiftscalerotate[1], self.shiftscalerotate[2]),
-            GaussNoise(var_limit=(self.noise_amp, self.noise_amp), p=0.3),
             RandomBrightnessContrast(brightness_limit=self.brightness_contrast[0],
                                      contrast_limit=self.brightness_contrast[1], p=0.5),
+            Blur(blur_limit=self.blur_limit, always_apply=False, p=0.2),
+            MultiplicativeNoise(multiplier=self.noise_lims, elementwise=True, p=0.3),
         ],
             p=p)
 

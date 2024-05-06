@@ -76,14 +76,17 @@ class Predict:
         self.model.load_state_dict(self.model_params['state_dict'])
         self.model.eval()
         result_patches = self.__predict(patches, progress_notifier)
-        del patches
+        del patches, self.model
 
         # stitch patches (mean of overlapped regions)
         vol_result = self.__stitch(result_patches)
-        del result_patches
+        del result_patches, self.model_params
 
         # save as .tif file
         save_as_tif(vol_result, self.result_name, normalize=normalize_result)
+        del vol_result
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def __reshape_data(self, vol):
         self.vol_shape = vol.shape

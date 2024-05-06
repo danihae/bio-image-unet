@@ -106,7 +106,7 @@ class Trainer:
                        'dilation': dilation, 'batch_size': self.batch_size,
                        'augmentation': self.data.aug_factor,
                        'clip_threshold': self.data.clip_threshold,
-                       'noise_amp': self.data.noise_amp,
+                       'noise_lims': self.data.noise_lims,
                        'brightness_contrast': self.data.brightness_contrast,
                        'shiftscalerotate': self.data.shiftscalerotate,
                        'in_channels': in_channels, 'out_channels': out_channels}
