@@ -1,27 +1,23 @@
 import glob
 import os
+from typing import Union
 
 import torch
-import torch.nn as nn
 import torch.optim as optim
+from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 
 from biu.siam_unet import BCEDiceLoss
-from torch.utils.data import DataLoader, random_split
-
 from . import logcoshTverskyLoss, TverskyLoss, weightedBCELoss
 from .predict import Predict
 from .siam_unet import Siam_UNet
 from ..utils import get_device
 
-# select device
-device = get_device()
-
 
 class Trainer:
     def __init__(self, dataset, num_epochs, batch_size=4, lr=1e-3, n_filter=32, mode='max', val_split=0.2,
                  save_dir='./', save_name='model.pth', save_iter=False, loss_function='BCEDice',
-                 loss_params=(1, 1), load_weights=None):
+                 loss_params=(1, 1), load_weights=None, device: Union[torch.device, str] = 'auto'):
         """
         Class for training of neural network. Creates trainer object, training is started with .start().
 
@@ -53,9 +49,15 @@ class Trainer:
             Loss function ('BCEDice', 'Tversky' or 'logcoshTversky')
         loss_params : Tuple[float, float]
             Parameter of loss function, depends on chosen loss function
+        device : torch.device or str, optional
+            Device to run the pytorch model on, defaults to 'auto', which selects CUDA or MPS if available.
         """
+        if device == 'auto':
+            self.device = get_device()
+        else:
+            self.device = torch.device(device)
 
-        self.model = Siam_UNet(n_filter=n_filter, mode=mode).to(device)
+        self.model = Siam_UNet(n_filter=n_filter, mode=mode).to(self.device)
 
         self.data = dataset
         self.num_epochs = num_epochs
@@ -98,9 +100,9 @@ class Trainer:
         if mode == 'train':
             print('\nStarting training epoch %s ...' % epoch)
             for i, batch_i in tqdm(enumerate(self.train_loader), total=len(self.train_loader), unit='batch'):
-                x_i = batch_i['image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
-                prev_x_i = batch_i['prev_image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
-                y_i = batch_i['mask'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
+                x_i = batch_i['image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(self.device)
+                prev_x_i = batch_i['prev_image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(self.device)
+                y_i = batch_i['mask'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(self.device)
                 # Forward pass: Compute predicted y by passing x to the model
                 y_pred, y_logits = self.model(x_i, prev_x_i)
                 # Compute loss
@@ -115,9 +117,9 @@ class Trainer:
             print('\nStarting validation epoch %s ...' % epoch)
             with torch.no_grad():
                 for i, batch_i in tqdm(enumerate(self.val_loader), total=len(self.val_loader), unit='batch'):
-                    x_i = batch_i['image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
-                    prev_x_i = batch_i['prev_image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
-                    y_i = batch_i['mask'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(device)
+                    x_i = batch_i['image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(self.device)
+                    prev_x_i = batch_i['prev_image'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(self.device)
+                    y_i = batch_i['mask'].view(self.batch_size, 1, self.dim[0], self.dim[1]).to(self.device)
                     # Forward pass: Compute predicted y by passing x to the model
                     y_pred, y_logits = self.model(x_i, prev_x_i)
                     # Compute loss

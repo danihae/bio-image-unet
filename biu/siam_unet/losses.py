@@ -25,9 +25,9 @@ class logcoshDiceLoss(nn.Module):
 
 
 class BCELoss2d(nn.Module):
-    def __init__(self, weight=None, size_average=True, **kwargs):
+    def __init__(self, weight=None, reduction='mean', **kwargs):
         super(BCELoss2d, self).__init__()
-        self.bce_loss = nn.BCELoss(weight, size_average)
+        self.bce_loss = nn.BCELoss(weight, reduction=reduction)
 
     def forward(self, logits, targets):
         probs = torch.sigmoid(logits)

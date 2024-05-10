@@ -1,3 +1,5 @@
+from typing import Union
+
 import numpy as np
 import tifffile
 import torch
@@ -8,16 +10,13 @@ from .unet_v0 import Unet_v0
 from .attention_unet import AttentionUnet
 from ..utils import save_as_tif, get_device
 
-# select device
-device = get_device()
-
 
 class Predict:
     """Class for prediction of movies and images with U-Net"""
 
     def __init__(self, imgs, result_name, model_params, network='Unet', resize_dim=(512, 512),
                  invert=False, normalization_mode='single', clip_threshold=(0., 99.8), add_tile=0,
-                 normalize_result=False, show_progress=True,
+                 normalize_result=False, show_progress=True, device: Union[torch.device, str] = 'auto',
                  progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
         """
         Prediction of tif files with standard 2D U-Net
@@ -52,9 +51,16 @@ class Predict:
             If true, results are normalized to [0, 255]
         show_progress : bool
             Whether to show progress bar.
+        device : torch.device or str, optional
+            Device to run the pytorch model on, defaults to 'auto', which selects CUDA or MPS if available.
         progress_notifier:
             Wrapper to show tqdm progress notifier in gui
         """
+        if device == 'auto':
+            self.device = get_device()
+        else:
+            self.device = torch.device(device)
+
         if isinstance(imgs, str):
             imgs = tifffile.imread(imgs)
 
@@ -74,7 +80,7 @@ class Predict:
         del imgs
 
         # load model and predict data
-        self.model_params = torch.load(model_params, map_location=device)
+        self.model_params = torch.load(model_params, map_location=self.device)
         if network is None:
             if 'network' in self.model_params.keys():
                 network = self.model_params['network']
@@ -90,7 +96,7 @@ class Predict:
                 self.model_params['in_channels'] = 1
                 self.model_params['out_channels'] = 1
         self.model = network(n_filter=self.model_params['n_filter'], in_channels=self.model_params['in_channels'],
-                             out_channels=self.model_params['out_channels']).to(device)
+                             out_channels=self.model_params['out_channels']).to(self.device)
         self.model.load_state_dict(self.model_params['state_dict'])
         self.model.eval()
         result_patches = self.__predict(patches, progress_notifier)
@@ -183,7 +189,7 @@ class Predict:
             _progress_notifier = enumerate(progress_notifier.iterator(patches)) if self.show_progress else enumerate(
                 patches)
             for i, patch_i in _progress_notifier:
-                patch_i = torch.from_numpy(patch_i.astype('float32') / 255).to(device).view((1,
+                patch_i = torch.from_numpy(patch_i.astype('float32') / 255).to(self.device).view((1,
                                                                                              self.model_params[
                                                                                                  'in_channels'],
                                                                                              self.resize_dim[0],

@@ -1,9 +1,10 @@
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 
 class UNet3D(nn.Module):
-    def __init__(self, in_channels=1, out_channels=1, n_filter=16):
+    def __init__(self, in_channels=1, out_channels=1, n_filter=16, use_interpolation=False):
         """
         Neural network for time-consistent segmentation or volume segmentation,
         adapted from Li, X. et al. Real-time denoising enables high-sensitivity fluorescence time-lapse imaging
@@ -16,6 +17,8 @@ class UNet3D(nn.Module):
             Number of convolutional filters (commonly 16, 32, or 64)
         """
         super().__init__()
+        self.use_interpolation = use_interpolation
+
         # encode
         self.encode1 = self.conv3D(in_channels=in_channels, out_channels=n_filter // 2)
         self.encode2 = self.conv3D(n_filter // 2, n_filter)
@@ -32,13 +35,15 @@ class UNet3D(nn.Module):
         self.middle_conv2 = self.conv3D(4 * n_filter, 8 * n_filter)
 
         # decode
-        self.up1 = nn.ConvTranspose3d(8 * n_filter, 8 * n_filter, kernel_size=2, stride=2)
+        if not use_interpolation:
+            self.up1 = nn.ConvTranspose3d(8 * n_filter, 8 * n_filter, kernel_size=2, stride=2)
+            self.up2 = nn.ConvTranspose3d(4 * n_filter, 4 * n_filter, kernel_size=2, stride=2)
+            self.up3 = nn.ConvTranspose3d(2 * n_filter, 2 * n_filter, kernel_size=2, stride=2)
+
         self.decode1 = self.conv3D(12 * n_filter, 4 * n_filter)
         self.decode2 = self.conv3D(4 * n_filter, 4 * n_filter)
-        self.up2 = nn.ConvTranspose3d(4 * n_filter, 4 * n_filter, kernel_size=2, stride=2)
         self.decode3 = self.conv3D(6 * n_filter, 2 * n_filter)
         self.decode4 = self.conv3D(2 * n_filter, 2 * n_filter)
-        self.up3 = nn.ConvTranspose3d(2 * n_filter, 2 * n_filter, kernel_size=2, stride=2)
         self.decode5 = self.conv3D(3 * n_filter, n_filter)
         self.decode6 = self.conv3D(n_filter, n_filter // 2)
         self.final = nn.Conv3d(n_filter // 2, out_channels=out_channels, kernel_size=1, padding=0)
@@ -68,15 +73,24 @@ class UNet3D(nn.Module):
         mid1 = self.middle_conv1(m3)
         mid2 = self.middle_conv2(mid1)
 
-        u1 = self.up1(mid2)
+        if self.use_interpolation:
+            u1 = F.interpolate(mid2, scale_factor=2, mode='trilinear', align_corners=False)
+        else:
+            u1 = self.up1(mid2)
         c1 = self.concat(u1, e6)
         d1 = self.decode1(c1)
         d2 = self.decode2(d1)
-        u2 = self.up2(d2)
+        if self.use_interpolation:
+            u2 = F.interpolate(d2, scale_factor=2, mode='trilinear', align_corners=False)
+        else:
+            u2 = self.up2(d2)
         c2 = self.concat(u2, e4)
         d3 = self.decode3(c2)
         d4 = self.decode4(d3)
-        u3 = self.up3(d4)
+        if self.use_interpolation:
+            u3 = F.interpolate(d4, scale_factor=2, mode='trilinear', align_corners=False)
+        else:
+            u3 = self.up3(d4)
         c3 = self.concat(u3, e2)
         d5 = self.decode5(c3)
         d6 = self.decode6(d5)

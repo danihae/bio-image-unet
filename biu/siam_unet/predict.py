@@ -1,4 +1,5 @@
 import os
+from typing import Union
 
 import numpy as np
 import tifffile
@@ -9,9 +10,6 @@ from biu.progress import ProgressNotifier
 
 from .siam_unet import Siam_UNet
 from ..utils import get_device
-
-# select device
-device = get_device()
 
 
 class Predict:
@@ -25,7 +23,8 @@ class Predict:
 
     def __init__(self, tif_file, result_name, model_params, resize_dim=(512, 512), invert=False,
                  normalization_mode='single', clip_threshold=(0.0, 99.98), add_tile=0, normalize_result=False,
-                 show_progress=True, progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
+                 show_progress=True, device: Union[torch.device, str] = 'auto',
+                 progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
         """
         Predicts a tif movie
 
@@ -51,11 +50,16 @@ class Predict:
             Add additional tiles for splitting large images to increase overlap
         normalize_result : bool
             If True, results are normalized to [0, 255]
-        show_progress : bool
-            Whether to show progress bar and resize shape.
+        device : torch.device or str, optional
+            Device to run the pytorch model on, defaults to 'auto', which selects CUDA or MPS if available.
         progress_notifier:
             Wrapper to show tqdm progress notifier in gui
         """
+        if device == 'auto':
+            self.device = get_device()
+        else:
+            self.device = torch.device(device)
+
         self.tif_file = tif_file
         self.add_tile = add_tile
         self.invert = invert
@@ -66,8 +70,8 @@ class Predict:
         self.show_progress = show_progress
 
         # load model
-        self.model_params = torch.load(model_params, map_location=device)
-        self.model = Siam_UNet(n_filter=self.model_params['n_filter'], mode=self.model_params['mode']).to(device)
+        self.model_params = torch.load(model_params, map_location=self.device)
+        self.model = Siam_UNet(n_filter=self.model_params['n_filter'], mode=self.model_params['mode']).to(self.device)
         self.model.load_state_dict(self.model_params['state_dict'])
         self.model.eval()
 
@@ -199,9 +203,9 @@ class Predict:
                 image_patch_i = patch_i[0, :, :]
                 prev_image_patch_i = patch_i[1, :, :]
 
-                image_patch_i = torch.from_numpy(image_patch_i.astype('float32') / 255).to(device).view(
+                image_patch_i = torch.from_numpy(image_patch_i.astype('float32') / 255).to(self.device).view(
                     (1, 1, self.resize_dim[0], self.resize_dim[1]))
-                prev_image_patch_i = torch.from_numpy(prev_image_patch_i.astype('float32') / 255).to(device).view(
+                prev_image_patch_i = torch.from_numpy(prev_image_patch_i.astype('float32') / 255).to(self.device).view(
                     (1, 1, self.resize_dim[0], self.resize_dim[1]))
 
                 res_i = self.model(image_patch_i, prev_image_patch_i)[0].view(
