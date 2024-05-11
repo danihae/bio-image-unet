@@ -80,6 +80,7 @@ class Trainer:
         self.n_filter = n_filter
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.use_interpolation = use_interpolation
         if channel_weights is None:
             self.channel_weights = torch.ones(out_channels)
         else:
@@ -112,6 +113,7 @@ class Trainer:
                        'loss_params': self.loss_params,
                        'time_loss_weight': self.time_loss_weight,
                        'n_filter': self.n_filter,
+                       'use_interpolation': use_interpolation,
                        'dilation': dilation, 'batch_size': self.batch_size,
                        'augmentation': self.data.aug_factor,
                        'clip_threshold': self.data.clip_threshold,

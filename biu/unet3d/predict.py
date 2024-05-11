@@ -10,14 +10,14 @@ from ..utils import save_as_tif, get_device
 
 
 class Predict:
-    """Class for prediction of movies and images with U-Net"""
+    """Class for prediction of movies and images with 3D U-Net"""
 
     def __init__(self, vol, result_name, model_params, network=UNet3D, resize_dim=(512, 512),
                  invert=False, normalization_mode='single', clip_threshold=(0., 99.8), add_patch=0,
                  normalize_result=False, progress_bar=True, device: Union[torch.device, str] = 'auto',
                  progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
         """
-        Prediction of tif files with standard 2D U-Net
+        Prediction of tif files with 3D U-Net
 
         1) Loading file and preprocess (normalization)
         2) Resizing of images into patches with resize_dim
@@ -79,8 +79,11 @@ class Predict:
 
         # load model and predict data
         self.model_params = torch.load(model_params, map_location=self.device)
+        if 'use_interpolation' not in self.model_params.keys():
+            self.model_params['use_interpolation'] = False
         self.model = network(n_filter=self.model_params['n_filter'], in_channels=self.model_params['in_channels'],
-                             out_channels=self.model_params['out_channels']).to(self.device)
+                             out_channels=self.model_params['out_channels'],
+                             use_interpolation=self.model_params['use_interpolation']).to(self.device)
         self.model.load_state_dict(self.model_params['state_dict'])
         self.model.eval()
         result_patches = self.__predict(patches, progress_notifier)
