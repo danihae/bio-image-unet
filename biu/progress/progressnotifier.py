@@ -1,5 +1,7 @@
 import math
 import time
+from typing import Optional
+
 from tqdm import tqdm as tqdm
 
 """
@@ -45,13 +47,19 @@ class ProgressNotifier:
         """
         return ProgressNotifier()
 
-    def iterator(self, iterateable):
+    def iterator(self, iterable, total:Optional[int]=None):
+        """
+        iterable:
+            element which can be iterated
+        total: Optional[int] default None
+            sets the total value, default is None.
+        """
         # check if it is iterable
         try:
-            iterator = iter(iterateable)
+            iterator = iter(iterable)
             if self.__use_tqdm:
-                return tqdm(iterateable)
-            return self.__IteratorWrapper(iterateable, self.__task_progress, self.__task_progress_details)
+                return tqdm(iterable)
+            return self.__IteratorWrapper(iterable, self.__task_progress, self.__task_progress_details,total)
         except TypeError:
             raise TypeError("object is not possible to iterate")
 
@@ -81,7 +89,7 @@ class ProgressNotifier:
         # this is a class variable (in java like static)
         timeMultiplier = 1000  # time values in milli seconds
 
-        def __init__(self, iterable, task_progress, task_progress_details=None):
+        def __init__(self, iterable, task_progress, task_progress_details=None,total=None):
             self.__total = None
             self.__time = None  # time used until "now", now is the current "next" call
             self.__eta = None  # calculated value of how long will it take
@@ -93,11 +101,15 @@ class ProgressNotifier:
             self.__time_start = int(round(time.time() * self.timeMultiplier))
             self.__current = 0  # current count of iterations
             # init total iterations number if possible
-            if iterable is not None:
-                try:
-                    self.__total = len(iterable)
-                except (TypeError, AttributeError):
-                    self.__total = None
+            if total is None:
+                if iterable is not None:
+                    try:
+                        self.__total = len(iterable)
+                    except (TypeError, AttributeError):
+                        self.__total = None
+            else:
+                self.__total=total
+                pass
             if task_progress_details is not None:
                 task_progress_details(0, 0, 0, 0, 0, 0)
 
