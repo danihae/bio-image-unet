@@ -47,19 +47,18 @@ class ProgressNotifier:
         """
         return ProgressNotifier()
 
-    def iterator(self, iterable, total:Optional[int]=None):
+    def iterator(self, iterable, total: Optional[int] = None):
         """
         iterable:
             element which can be iterated
         total: Optional[int] default None
             sets the total value, default is None.
         """
-        # check if it is iterable
         try:
             iterator = iter(iterable)
             if self.__use_tqdm:
-                return tqdm(iterable)
-            return self.__IteratorWrapper(iterable, self.__task_progress, self.__task_progress_details,total)
+                return tqdm(iterable, total=total)
+            return self.__IteratorWrapper(iterable, self.__task_progress, self.__task_progress_details, total)
         except TypeError:
             raise TypeError("object is not possible to iterate")
 
@@ -70,8 +69,6 @@ class ProgressNotifier:
             self.__task_progress = task
         except:
             raise Exception('The given variable is not a function with 1 numeric parameter (or similar constructs)')
-        # sets the task that should be called on progress change
-        # task should be a method or lambda that takes a number as input
 
     def set_progress_detail(self, task):
         # check if task meets the requirements
@@ -81,15 +78,10 @@ class ProgressNotifier:
         except:
             raise Exception('The given variable is not a function with 6 numeric parameters (or similar constructs)')
 
-        # sets the task that should be called on progress change
-        # it gives details about the progress (like tqdm does), ETA, iterations per second and so on
-        # this var doesn't have to be set
-
     class __IteratorWrapper:
-        # this is a class variable (in java like static)
         timeMultiplier = 1000  # time values in milli seconds
 
-        def __init__(self, iterable, task_progress, task_progress_details=None,total=None):
+        def __init__(self, iterable, task_progress, task_progress_details=None, total=None):
             self.__total = None
             self.__time = None  # time used until "now", now is the current "next" call
             self.__eta = None  # calculated value of how long will it take
@@ -108,7 +100,7 @@ class ProgressNotifier:
                     except (TypeError, AttributeError):
                         self.__total = None
             else:
-                self.__total=total
+                self.__total = total
                 pass
             if task_progress_details is not None:
                 task_progress_details(0, 0, 0, 0, 0, 0)
@@ -131,9 +123,6 @@ class ProgressNotifier:
                 else:  # otherwise the number of iterations is reported
                     self.__task_progress(self.__current)
 
-            # todo: the progress_details should update in an extra thread each second and the duration should be a timer in there
-            # since there could be very slow iterations taking a while and with extra thread and duration as timer
-            # the user "notices" progress
             if self.__task_progress_details is not None and self.__eta is not None:
                 hh_eta = math.floor(self.__eta / (self.timeMultiplier * 3600))
                 mm_eta = math.floor(self.__eta / (self.timeMultiplier * 60) - hh_eta * 60)
