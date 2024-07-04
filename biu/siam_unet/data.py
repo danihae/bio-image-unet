@@ -13,56 +13,57 @@ from torch.utils.data import Dataset
 
 
 class DataProcess(Dataset):
+    """
+    Create training data object for network training
+
+    1) Create folder structure for training data
+    2) Move and preprocess training images
+    3) Split input images into tiles
+    4) Augment training data
+    5) Create object of PyTorch Dataset class for training
+
+    Parameters
+    ----------
+    source_dir : Tuple[str, str]
+        Path of training data [images, labels]. Images need to be tif files.
+    dim_out : Tuple[int, int]
+        Resize dimensions of images for training
+    aug_factor : int
+        Factor of image augmentation
+    data_path : str
+        Base path of directories for training data
+    file_ext : str
+        Extension of image files. Defaults to '.tif'
+    threshold_masks : int
+        Threshold to binarize masks [0-255]
+    dilate_mask
+        Radius of binary erosion/dilation of masks [-2, -1, 0, 1, 2]
+    dilate_kernel : str
+        Dilation kernel ('disk' or 'square')
+    val_split : float
+        Validation split for training
+    invert_masks : bool
+        If True, greyscale binary labels is inverted
+    skeletonize : bool
+        If True, binary labels are skeletonized
+    create : bool, optional
+        If False, existing data set in data_path is used
+    clip_threshold : Tuple[float, float]
+        Clip thresholds for intensity normalization of images
+    shiftscalerotate : [float, float, float]
+        Shift, scale and rotate image during augmentation
+    noise_amp : float
+        Amplitude of Gaussian noise for image augmentation
+    brightness_contrast : Tuple[float, float]
+        Adapt brightness and contrast of images during augmentation
+    rescale : float, optional
+        Rescale all images and labels by factor rescale
+    """
     def __init__(self, source_dir, dim_out=(256, 256), aug_factor=10, data_path='../data/', file_ext='.tif',
                  threshold_masks=50, dilate_mask=0, dilate_kernel='disk', val_split=0.2, invert_masks=False,
                  skeletonize=False, create=True, clip_threshold=(0.2, 99.8), shiftscalerotate=(0, 0, 0), noise_amp=10,
                  brightness_contrast=(0.25, 0.25), rescale=None):
-        """
-        Create training data object for network training
 
-        1) Create folder structure for training data
-        2) Move and preprocess training images
-        3) Split input images into tiles
-        4) Augment training data
-        5) Create object of PyTorch Dataset class for training
-
-        Parameters
-        ----------
-        source_dir : Tuple[str, str]
-            Path of training data [images, labels]. Images need to be tif files.
-        dim_out : Tuple[int, int]
-            Resize dimensions of images for training
-        aug_factor : int
-            Factor of image augmentation
-        data_path : str
-            Base path of directories for training data
-        file_ext : str
-            Extension of image files. Defaults to '.tif'
-        threshold_masks : int
-            Threshold to binarize masks [0-255]
-        dilate_mask
-            Radius of binary erosion/dilation of masks [-2, -1, 0, 1, 2]
-        dilate_kernel : str
-            Dilation kernel ('disk' or 'square')
-        val_split : float
-            Validation split for training
-        invert_masks : bool
-            If True, greyscale binary labels is inverted
-        skeletonize : bool
-            If True, binary labels are skeletonized
-        create : bool, optional
-            If False, existing data set in data_path is used
-        clip_threshold : Tuple[float, float]
-            Clip thresholds for intensity normalization of images
-        shiftscalerotate : [float, float, float]
-            Shift, scale and rotate image during augmentation
-        noise_amp : float
-            Amplitude of Gaussian noise for image augmentation
-        brightness_contrast : Tuple[float, float]
-            Adapt brightness and contrast of images during augmentation
-        rescale : float, optional
-            Rescale all images and labels by factor rescale
-        """
         self.source_dir = source_dir
         self.create = create
         self.data_path = data_path

@@ -15,43 +15,44 @@ from ..utils import get_device
 
 
 class Trainer:
+    """
+    Class for training of neural network. Creates trainer object, training is started with .start().
+
+    Parameters
+    ----------
+    dataset
+        Training data, object of PyTorch Dataset class
+    num_epochs : int
+        Number of training epochs
+    batch_size : int
+        Batch size for training
+    lr : float
+        Learning rate
+    n_filter : int
+        Number of convolutional filters in first layer
+    mode : str
+        Mode to combine low-level features of T-1 and T ('max' or 'corr')
+    val_split : float
+        Validation split
+    save_dir : str
+        Path of directory to save trained networks
+    save_name : str
+        Base name for saving trained networks
+    save_iter : bool
+        If True, network state is save after each epoch
+    load_weights : str, optional
+        If not None, network state is loaded before training
+    loss_function : str
+        Loss function ('BCEDice', 'Tversky' or 'logcoshTversky')
+    loss_params : Tuple[float, float]
+        Parameter of loss function, depends on chosen loss function
+    device : torch.device or str, optional
+        Device to run the pytorch model on, defaults to 'auto', which selects CUDA or MPS if available.
+    """
     def __init__(self, dataset, num_epochs, batch_size=4, lr=1e-3, n_filter=32, mode='max', val_split=0.2,
                  save_dir='./', save_name='model.pth', save_iter=False, loss_function='BCEDice',
                  loss_params=(1, 1), load_weights=None, device: Union[torch.device, str] = 'auto'):
-        """
-        Class for training of neural network. Creates trainer object, training is started with .start().
 
-        Parameters
-        ----------
-        dataset
-            Training data, object of PyTorch Dataset class
-        num_epochs : int
-            Number of training epochs
-        batch_size : int
-            Batch size for training
-        lr : float
-            Learning rate
-        n_filter : int
-            Number of convolutional filters in first layer
-        mode : str
-            Mode to combine low-level features of T-1 and T ('max' or 'corr')
-        val_split : float
-            Validation split
-        save_dir : str
-            Path of directory to save trained networks
-        save_name : str
-            Base name for saving trained networks
-        save_iter : bool
-            If True, network state is save after each epoch
-        load_weights : str, optional
-            If not None, network state is loaded before training
-        loss_function : str
-            Loss function ('BCEDice', 'Tversky' or 'logcoshTversky')
-        loss_params : Tuple[float, float]
-            Parameter of loss function, depends on chosen loss function
-        device : torch.device or str, optional
-            Device to run the pytorch model on, defaults to 'auto', which selects CUDA or MPS if available.
-        """
         if device == 'auto':
             self.device = get_device()
         else:

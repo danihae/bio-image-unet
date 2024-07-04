@@ -6,3 +6,4 @@ scikit-image~=0.18
 packaging
 torch>=2.0
 jupyter
+napari~=0.4.18

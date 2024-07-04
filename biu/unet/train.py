@@ -15,50 +15,51 @@ from ..utils import init_weights, get_device
 
 
 class Trainer:
+    """
+    Class for training of neural network. Creates trainer object, training is started with .start().
+
+    Parameters
+    ----------
+    dataset
+        Training data, object of PyTorch Dataset class
+    num_epochs : int
+        Number of training epochs
+    network
+        Network class (Default Unet)
+    batch_size : int
+        Batch size for training
+    lr : float
+        Learning rate
+    in_channels : int
+        Number of input channels
+    out_channels : int
+        Number of output channels
+    channel_weights : list
+        List of loss weights for each channel
+    n_filter : int
+        Number of convolutional filters in first layer
+    val_split : float
+        Validation split
+    save_dir : str
+        Path of directory to save trained networks
+    save_name : str
+        Base name for saving trained networks
+    save_iter : bool
+        If True, network state is save after each epoch
+    load_weights : str, optional
+        If not None, network state is loaded before training
+    loss_function : str
+        Loss function ('BCEDice', 'Tversky' or 'logcoshTversky')
+    loss_params : Tuple[float, float]
+        Parameter of loss function, depends on chosen loss function
+    device : torch.device or str, optional
+        Device to run the pytorch model on, defaults to 'auto', which selects CUDA or MPS if available.
+    """
     def __init__(self, dataset, num_epochs, network=Unet, batch_size=4, lr=1e-3, in_channels=1, out_channels=1,
                  channel_weights=None, n_filter=64, dilation=1, val_split=0.2, save_dir='./', save_name='model.pth',
                  save_iter=False, load_weights=False, loss_function='BCEDice', loss_params=(0.5, 0.5),
                  device: Union[torch.device, str] = 'auto'):
-        """
-        Class for training of neural network. Creates trainer object, training is started with .start().
 
-        Parameters
-        ----------
-        dataset
-            Training data, object of PyTorch Dataset class
-        num_epochs : int
-            Number of training epochs
-        network
-            Network class (Default Unet)
-        batch_size : int
-            Batch size for training
-        lr : float
-            Learning rate
-        in_channels : int
-            Number of input channels
-        out_channels : int
-            Number of output channels
-        channel_weights : list
-            List of loss weights for each channel
-        n_filter : int
-            Number of convolutional filters in first layer
-        val_split : float
-            Validation split
-        save_dir : str
-            Path of directory to save trained networks
-        save_name : str
-            Base name for saving trained networks
-        save_iter : bool
-            If True, network state is save after each epoch
-        load_weights : str, optional
-            If not None, network state is loaded before training
-        loss_function : str
-            Loss function ('BCEDice', 'Tversky' or 'logcoshTversky')
-        loss_params : Tuple[float, float]
-            Parameter of loss function, depends on chosen loss function
-        device : torch.device or str, optional
-            Device to run the pytorch model on, defaults to 'auto', which selects CUDA or MPS if available.
-        """
         if device == 'auto':
             self.device = get_device()
         else:

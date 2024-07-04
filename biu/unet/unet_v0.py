@@ -3,17 +3,18 @@ from torch import nn
 
 
 class Unet_v0(nn.Module):
-    def __init__(self, n_filter=32, **kwargs):
-        """
-        Neural network for semantic image segmentation U-Net (PyTorch),
-        Reference:  Falk, T. et al. U-Net: deep learning for cell counting, detection, and morphometry. Nat Methods 16,
-        67–70 (2019).
+    """
+    Neural network for semantic image segmentation U-Net (PyTorch),
+    Reference:  Falk, T. et al. U-Net: deep learning for cell counting, detection, and morphometry. Nat Methods 16,
+    67–70 (2019).
 
-        Parameters
-        ----------
-        n_filter : int
-            Number of convolutional filters (commonly 16, 32, or 64)
-        """
+    Parameters
+    ----------
+    n_filter : int
+        Number of convolutional filters (commonly 16, 32, or 64)
+    """
+    def __init__(self, n_filter=32, **kwargs):
+
         super().__init__()
         # encode
         self.encode1 = self.conv(1, n_filter)
