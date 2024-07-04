@@ -7,7 +7,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
 
-from biu.siam_unet import BCEDiceLoss
+from bio_image_unet.siam_unet import BCEDiceLoss
 from . import logcoshTverskyLoss, TverskyLoss, weightedBCELoss
 from .predict import Predict
 from .siam_unet import Siam_UNet

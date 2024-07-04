@@ -6,7 +6,7 @@ import tifffile
 import torch
 from tifffile.tifffile import TiffFile
 from tqdm import tqdm as tqdm
-from biu.progress import ProgressNotifier
+from bio_image_unet.progress import ProgressNotifier
 
 from .siam_unet import Siam_UNet
 from ..utils import get_device
