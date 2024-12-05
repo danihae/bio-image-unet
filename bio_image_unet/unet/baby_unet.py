@@ -3,17 +3,18 @@ from torch import nn
 
 
 class BabyUnet(nn.Module):
-    def __init__(self, n_filter=4):
-        """
-        Neural network for semantic image segmentation U-Net (PyTorch), with only three max-pooling layers
-        Reference:  Falk, T. et al. U-Net: deep learning for cell counting, detection, and morphometry. Nat Methods 16,
-        67–70 (2019).
+    """
+    Neural network for semantic image segmentation U-Net (PyTorch), with only three max-pooling layers
+    Reference:  Falk, T. et al. U-Net: deep learning for cell counting, detection, and morphometry. Nat Methods 16,
+    67–70 (2019).
 
-        Parameters
-        ----------
-        n_filter : int
-            Number of convolutional filters (commonly 2**n)
-        """
+    Parameters
+    ----------
+    n_filter : int
+        Number of convolutional filters (commonly 2**n)
+    """
+    def __init__(self, n_filter=4):
+
         super().__init__()
         # encode
         self.encode1 = self.conv(1, n_filter)

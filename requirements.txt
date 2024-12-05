@@ -7,3 +7,4 @@ packaging
 torch>=2.0
 jupyter
 tensorboard
+napari~=0.4.18

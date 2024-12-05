@@ -3,17 +3,16 @@ from torch import nn
 
 
 class AttentionUnet(nn.Module):
-    def __init__(self, in_channels=1, out_channels=1, n_filter=32, dilation=1):
-        """
-        Neural network for semantic image segmentation U-Net (PyTorch),
-        Reference:  Falk, T. et al. U-Net: deep learning for cell counting, detection, and morphometry. Nat Methods 16,
-        67–70 (2019).
+    """
+    Neural network for semantic image segmentation U-Net (PyTorch), with attention mechanism during decoding
 
-        Parameters
-        ----------
-        n_filter : int
-            Number of convolutional filters (commonly 16, 32, or 64)
-        """
+    Parameters
+    ----------
+    n_filter : int
+        Number of convolutional filters (commonly 16, 32, or 64)
+    """
+    def __init__(self, in_channels=1, out_channels=1, n_filter=32, dilation=1):
+
         super().__init__()
         # encode
         self.encode1 = self.conv(in_channels=in_channels, out_channels=n_filter, dilation=dilation)

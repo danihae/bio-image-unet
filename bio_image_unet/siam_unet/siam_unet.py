@@ -5,6 +5,16 @@ import logging
 
 
 class Siam_UNet(nn.Module):
+    """
+    Siamese U-Net model for image segmentation.
+
+    Parameters
+    ----------
+    n_filter : int, optional
+        Number of filters in the convolutional layers (default is 32).
+    mode : str, optional
+        Mode for combining T-1 and T (default is 'concat'). Options are 'concat', 'corr', 'max', 'control'.
+    """
     def __init__(self, n_filter=32, mode='concat'):
         super().__init__()
         # mode for combining T-1 and T

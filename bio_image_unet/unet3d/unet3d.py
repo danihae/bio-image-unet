@@ -4,18 +4,19 @@ import torch.nn.functional as F
 
 
 class UNet3D(nn.Module):
+    """
+    Neural network for time-consistent segmentation or volume segmentation,
+    adapted from Li, X. et al. Real-time denoising enables high-sensitivity fluorescence time-lapse imaging
+    beyond the shot-noise limit. Nat Biotechnol 41, 282–292 (2023).
+
+
+    Parameters
+    ----------
+    n_filter : int
+        Number of convolutional filters (commonly 16, 32, or 64)
+    """
     def __init__(self, in_channels=1, out_channels=1, n_filter=16, use_interpolation=False):
-        """
-        Neural network for time-consistent segmentation or volume segmentation,
-        adapted from Li, X. et al. Real-time denoising enables high-sensitivity fluorescence time-lapse imaging
-        beyond the shot-noise limit. Nat Biotechnol 41, 282–292 (2023).
 
-
-        Parameters
-        ----------
-        n_filter : int
-            Number of convolutional filters (commonly 16, 32, or 64)
-        """
         super().__init__()
         self.use_interpolation = use_interpolation
 

@@ -6,7 +6,7 @@ import tifffile
 import torch
 from tifffile.tifffile import TiffFile
 from tqdm import tqdm as tqdm
-from biu.progress import ProgressNotifier
+from bio_image_unet.progress import ProgressNotifier
 
 from .siam_unet import Siam_UNet
 from ..utils import get_device
@@ -14,47 +14,47 @@ from ..utils import get_device
 
 class Predict:
     """
-    Class for prediction of tif-movies.
+    Class for prediction of tif-movies with Siamese U-Net
+
+
     1) Loading file and preprocess (normalization)
     2) Resizing of images into patches with resize_dim
     3) Prediction with U-Net
     4) Stitching of predicted patches and averaging of overlapping regions
+
+    Parameters
+    ----------
+    tif_file : str
+        Path to input tif stack
+    result_name : str
+        Path of result file
+    model_params : str
+        path of u-net parameters (.pth file)
+    resize_dim
+        Image dimensions for resizing for prediction. If resize_dim=None, the image will not be resized but
+        the whole image will be processed by the convolution layers.
+    invert : bool
+        Invert greyscale of image(s) before prediction
+    normalization_mode : str
+        Mode for intensity normalization for 3D stacks prior to prediction ('single': each image individually,
+        'all': based on histogram of full stack, 'first': based on histogram of first image in stack)
+    clip_threshold : Tuple[float, float]
+        Clip threshold for image intensity before prediction
+    add_tile : int, optional
+        Add additional tiles for splitting large images to increase overlap
+    normalize_result : bool
+        If True, results are normalized to [0, 255]
+    device : torch.device or str, optional
+        Device to run the pytorch model on, defaults to 'auto', which selects CUDA or MPS if available.
+    progress_notifier:
+        Wrapper to show tqdm progress notifier in gui
     """
 
     def __init__(self, tif_file, result_name, model_params, resize_dim=(512, 512), invert=False,
                  normalization_mode='single', clip_threshold=(0.0, 99.98), add_tile=0, normalize_result=False,
                  show_progress=True, device: Union[torch.device, str] = 'auto',
                  progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
-        """
-        Predicts a tif movie
 
-        Parameters
-        ----------
-        tif_file : str
-            Path to input tif stack
-        result_name : str
-            Path of result file
-        model_params : str
-            path of u-net parameters (.pth file)
-        resize_dim
-            Image dimensions for resizing for prediction. If resize_dim=None, the image will not be resized but
-            the whole image will be processed by the convolution layers.
-        invert : bool
-            Invert greyscale of image(s) before prediction
-        normalization_mode : str
-            Mode for intensity normalization for 3D stacks prior to prediction ('single': each image individually,
-            'all': based on histogram of full stack, 'first': based on histogram of first image in stack)
-        clip_threshold : Tuple[float, float]
-            Clip threshold for image intensity before prediction
-        add_tile : int, optional
-            Add additional tiles for splitting large images to increase overlap
-        normalize_result : bool
-            If True, results are normalized to [0, 255]
-        device : torch.device or str, optional
-            Device to run the pytorch model on, defaults to 'auto', which selects CUDA or MPS if available.
-        progress_notifier:
-            Wrapper to show tqdm progress notifier in gui
-        """
         if device == 'auto':
             self.device = get_device()
         else:

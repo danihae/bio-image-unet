@@ -13,60 +13,62 @@ from torch.utils.data import Dataset
 
 
 class DataProcess(Dataset):
-    """Class for training data generation (processing, splitting, augmentation)"""
+    """
+    Class for training data generation (processing, splitting, augmentation)
+
+    Creates training data object for network training
+
+    1) Create folder structure for training data
+    2) Move and preprocess training images
+    3) Split input images into tiles
+    4) Augment training data
+    5) Create object of PyTorch Dataset class for training
+
+    Parameters
+    ----------
+    source_dir : Tuple[str, str]
+        Path of training data [images, labels]. Images need to be tif files.
+    dim_out : Tuple[int, int]
+        Resize dimensions of images for training
+    aug_factor : int
+        Factor of image augmentation
+    data_path : str
+        Base path of temporary directories for training data
+    in_channels : int
+        Number of input channels of training data
+    out_channels : int
+        Number of output channels of training data
+    dilate_mask
+        Radius of binary dilation of masks [-2, -1, 0, 1, 2]
+    dilate_kernel : str
+        Dilation kernel ('disk' or 'square')
+    add_tile : int
+        Add additional tile for splitting images into tiles with more overlapping tiles
+    val_split : float
+        Validation split for training
+    invert : bool
+        If True, greyscale binary labels is inverted
+    skeletonize : bool
+        If True, binary labels are skeletonized
+    clip_threshold : Tuple[float, float]
+        Clip thresholds for intensity normalization of images
+    shiftscalerotate : [float, float, float]
+        Shift, scale and rotate image during augmentation
+    noise_amp : float
+        Amplitude of Gaussian noise for image augmentation
+    brightness_contrast : Tuple[float, float]
+        Adapt brightness and contrast of images during augmentation
+    rescale : float, optional
+        Rescale all images and labels by factor rescale
+    create : bool, optional
+        If False, existing data set in data_path is used
+    """
 
     def __init__(self, source_dir, dim_out=(256, 256), aug_factor=10, data_path='../data/', in_channels=1,
                  out_channels=1, dilate_mask=0, dilate_kernel='disk', add_tile=0,
                  val_split=0.2, invert=False, skeletonize=False, clip_threshold=(0.2, 99.8), shiftscalerotate=(0, 0, 0),
                  noise_lims=(0.5, 1.2), brightness_contrast=(0.25, 0.25), blur_limit=(2, 7), rescale=None, create=True):
-        """
-        Create training data object for network training
 
-        1) Create folder structure for training data
-        2) Move and preprocess training images
-        3) Split input images into tiles
-        4) Augment training data
-        5) Create object of PyTorch Dataset class for training
-
-        Parameters
-        ----------
-        source_dir : Tuple[str, str]
-            Path of training data [images, labels]. Images need to be tif files.
-        dim_out : Tuple[int, int]
-            Resize dimensions of images for training
-        aug_factor : int
-            Factor of image augmentation
-        data_path : str
-            Base path of temporary directories for training data
-        in_channels : int
-            Number of input channels of training data
-        out_channels : int
-            Number of output channels of training data
-        dilate_mask
-            Radius of binary dilation of masks [-2, -1, 0, 1, 2]
-        dilate_kernel : str
-            Dilation kernel ('disk' or 'square')
-        add_tile : int
-            Add additional tile for splitting images into tiles with more overlapping tiles
-        val_split : float
-            Validation split for training
-        invert : bool
-            If True, greyscale binary labels is inverted
-        skeletonize : bool
-            If True, binary labels are skeletonized
-        clip_threshold : Tuple[float, float]
-            Clip thresholds for intensity normalization of images
-        shiftscalerotate : [float, float, float]
-            Shift, scale and rotate image during augmentation
-        noise_amp : float
-            Amplitude of Gaussian noise for image augmentation
-        brightness_contrast : Tuple[float, float]
-            Adapt brightness and contrast of images during augmentation
-        rescale : float, optional
-            Rescale all images and labels by factor rescale
-        create : bool, optional
-            If False, existing data set in data_path is used
-        """
         self.source_dir = source_dir
         self.create = create
         self.data_path = data_path
@@ -123,7 +125,8 @@ class DataProcess(Dataset):
 
     def __move_and_edit(self):
         # create image data
-        files_image = glob.glob(self.source_dir[0] + '*')
+        files_image = [f for f in glob.glob(self.source_dir[0] + '*')
+                       if f.lower().endswith(('.tif', '.tiff')) and not os.path.basename(f).startswith('.')]
         for file_i in files_image:
             img_i = tifffile.imread(file_i).astype(np.float32)
             # clip and normalize (0,255)
@@ -137,7 +140,8 @@ class DataProcess(Dataset):
                 img_i = np.expand_dims(img_i, 0)
             tifffile.imwrite(self.image_path + save_i + '.tif', img_i)
         # create masks
-        files_mask = glob.glob(self.source_dir[1] + '*')
+        files_mask = [f for f in glob.glob(self.source_dir[1] + '*')
+                      if f.lower().endswith(('.tif', '.tiff')) and not os.path.basename(f).startswith('.')]
         print('%s files found' % len(files_mask))
         for file_i in files_mask:
             mask_i = tifffile.imread(file_i)
@@ -176,7 +180,7 @@ class DataProcess(Dataset):
             basename_i = os.path.basename(file_i)
             mask_i = tifffile.imread(self.data_path + '/mask/' + basename_i)
             img_i = tifffile.imread(self.data_path + '/image/' + basename_i)
-            merge = np.zeros((mask_i.shape[1], mask_i.shape[2], mask_i.shape[0]+img_i.shape[0]))
+            merge = np.zeros((mask_i.shape[1], mask_i.shape[2], mask_i.shape[0] + img_i.shape[0]))
             merge[:, :, :mask_i.shape[0]] = np.moveaxis(mask_i, 0, 2)
             merge[:, :, mask_i.shape[0]:] = np.moveaxis(img_i, 0, 2)
             merge = merge.astype('uint8')

@@ -20,6 +20,7 @@ scikit-image = ">0.18,<1.0"
 packaging = "*"
 torch = "2.*"
 tensorboard = "*"
+napari = "^0.4.18"
 
 [tool.poetry.dev-dependencies]
 

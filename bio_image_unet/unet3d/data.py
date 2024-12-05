@@ -13,55 +13,57 @@ from torch.utils.data import Dataset
 
 
 class DataProcess(Dataset):
-    """Class for training data generation (processing, splitting, augmentation)"""
+    """
+    Class for training data generation (processing, splitting, augmentation)
+
+    Create training data object for network training
+
+    1) Create folder structure for training data
+    2) Move and preprocess training volumes
+    3) Split input volumes into patches
+    4) Augment training data
+    5) Create object of PyTorch Dataset class for training
+
+    Parameters
+    ----------
+    source_dir : Tuple[str, str]
+        Path of training data [volumes, labels]. volumes need to be tif files.
+    dim_out : Tuple[int, int]
+        Resize dimensions of volumes for training
+    aug_factor : int
+        Factor of volume augmentation
+    data_path : str
+        Base path of temporary directories for training data
+    dilate_mask
+        Radius of binary dilation of masks [-2, -1, 0, 1, 2]
+    dilate_kernel : str
+        Dilation kernel ('disk' or 'square')
+    add_patch : int
+        Add additional patch for splitting volumes into patches with more overlapping patches
+    val_split : float
+        Validation split for training
+    invert : bool
+        If True, greyscale binary labels is inverted
+    skeletonize : bool
+        If True, binary labels are skeletonized
+    clip_threshold : Tuple[float, float]
+        Clip thresholds for intensity normalization of volumes
+    shiftscalerotate : [float, float, float]
+        Shift, scale and rotate during augmentation
+    noise_amp : float
+        Amplitude of Gaussian noise for augmentation
+    brightness_contrast : Tuple[float, float]
+        Adapt brightness and contrast of volumes during augmentation
+    rescale : float, optional
+        Rescale all volumes and labels by factor rescale
+    create : bool, optional
+        If False, existing data set in data_path is used
+    """
 
     def __init__(self, source_dir, dim_out=(128, 128, 128), aug_factor=10, data_path='../data/', dilate_mask=0, dilate_kernel='disk', add_patch=0,
                  val_split=0.2, invert=False, skeletonize=False, clip_threshold=(0.2, 99.8), shiftscalerotate=(0, 0, 0),
                  noise_amp=10, brightness_contrast=(0.25, 0.25), create=True):
-        """
-        Create training data object for network training
 
-        1) Create folder structure for training data
-        2) Move and preprocess training volumes
-        3) Split input volumes into patches
-        4) Augment training data
-        5) Create object of PyTorch Dataset class for training
-
-        Parameters
-        ----------
-        source_dir : Tuple[str, str]
-            Path of training data [volumes, labels]. volumes need to be tif files.
-        dim_out : Tuple[int, int]
-            Resize dimensions of volumes for training
-        aug_factor : int
-            Factor of volume augmentation
-        data_path : str
-            Base path of temporary directories for training data
-        dilate_mask
-            Radius of binary dilation of masks [-2, -1, 0, 1, 2]
-        dilate_kernel : str
-            Dilation kernel ('disk' or 'square')
-        add_patch : int
-            Add additional patch for splitting volumes into patches with more overlapping patches
-        val_split : float
-            Validation split for training
-        invert : bool
-            If True, greyscale binary labels is inverted
-        skeletonize : bool
-            If True, binary labels are skeletonized
-        clip_threshold : Tuple[float, float]
-            Clip thresholds for intensity normalization of volumes
-        shiftscalerotate : [float, float, float]
-            Shift, scale and rotate during augmentation
-        noise_amp : float
-            Amplitude of Gaussian noise for augmentation
-        brightness_contrast : Tuple[float, float]
-            Adapt brightness and contrast of volumes during augmentation
-        rescale : float, optional
-            Rescale all volumes and labels by factor rescale
-        create : bool, optional
-            If False, existing data set in data_path is used
-        """
         self.source_dir = source_dir
         self.create = create
         self.data_path = data_path

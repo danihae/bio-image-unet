@@ -6,11 +6,11 @@ import gc
 import numpy as np
 import tifffile
 
-import biu.siam_unet as siam
-import biu.unet as unet
-from biu import unet3d
+import bio_image_unet.siam_unet as siam
+import bio_image_unet.unet as unet
+from bio_image_unet import unet3d
 # create test folder with random training and test data
-from biu.progress import ProgressNotifier
+from bio_image_unet.progress import ProgressNotifier
 
 folder = './temp_test/'
 

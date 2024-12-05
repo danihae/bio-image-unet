@@ -10,50 +10,50 @@ from ..utils import save_as_tif, get_device
 
 
 class Predict:
-    """Class for prediction of movies and images with 3D U-Net"""
+    """
+    Class for prediction of movies or 3D stacks with 3D U-Net
+
+    1) Loading file and preprocess (normalization)
+    2) Resizing of images into patches with resize_dim
+    3) Prediction with U-Net
+    4) Stitching of predicted patches and averaging of overlapping regions
+
+    Parameters
+    ----------
+    vol : ndarray, string
+        volume to predict, if string, attempt to load from tif file
+    result_name : str
+        path for result
+    model_params : str
+        path of u-net parameters (.pth file)
+    network
+        Network class
+    resize_dim
+        Image dimensions for resizing for prediction
+    invert : bool
+        Invert greyscale of image(s) before prediction
+    normalization_mode : str
+        Mode for intensity normalization for 3D stacks prior to prediction ('single': each image individually,
+        'all': based on histogram of full stack, 'first': based on histogram of first image in stack)
+    clip_threshold : Tuple[float, float]
+        Clip threshold for image intensity before prediction
+    add_patch : int, optional
+        Add additional patches for splitting large images to increase overlap
+    normalize_result : bool
+        If true, results are normalized to [0, 255]
+    progress_bar : bool, optional
+        Whether to display progress bar during prediction.
+    device : torch.device, optional
+        Device to run pytorch model on. Default is 'auto', which selects CUDA or MPS if available.
+    progress_notifier:
+        Wrapper to show tqdm progress notifier in gui
+    """
 
     def __init__(self, vol, result_name, model_params, network=UNet3D, resize_dim=(512, 512),
                  invert=False, normalization_mode='single', clip_threshold=(0., 99.8), add_patch=0,
                  normalize_result=False, progress_bar=True, device: Union[torch.device, str] = 'auto',
                  progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
-        """
-        Prediction of tif files with 3D U-Net
 
-        1) Loading file and preprocess (normalization)
-        2) Resizing of images into patches with resize_dim
-        3) Prediction with U-Net
-        4) Stitching of predicted patches and averaging of overlapping regions
-
-        Parameters
-        ----------
-        vol : ndarray, string
-            volume to predict, if string, attempt to load from tif file
-        result_name : str
-            path for result
-        model_params : str
-            path of u-net parameters (.pth file)
-        network
-            Network class
-        resize_dim
-            Image dimensions for resizing for prediction
-        invert : bool
-            Invert greyscale of image(s) before prediction
-        normalization_mode : str
-            Mode for intensity normalization for 3D stacks prior to prediction ('single': each image individually,
-            'all': based on histogram of full stack, 'first': based on histogram of first image in stack)
-        clip_threshold : Tuple[float, float]
-            Clip threshold for image intensity before prediction
-        add_patch : int, optional
-            Add additional patches for splitting large images to increase overlap
-        normalize_result : bool
-            If true, results are normalized to [0, 255]
-        progress_bar : bool, optional
-            Whether to display progress bar during prediction.
-        device : torch.device, optional
-            Device to run pytorch model on. Default is 'auto', which selects CUDA or MPS if available.
-        progress_notifier:
-            Wrapper to show tqdm progress notifier in gui
-        """
         if isinstance(vol, str):
             vol = tifffile.imread(vol)
 
