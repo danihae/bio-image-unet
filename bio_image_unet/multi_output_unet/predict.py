@@ -12,8 +12,8 @@ from ..utils import get_device
 class Predict:
     """Class for prediction of movies and images using a U-Net model."""
 
-    def __init__(self, imgs, model_params, result_path=None, resize_dim=(512, 512), batch_size=1,
-                 invert=False, normalization_mode='single', clip_threshold=(0., 99.8), add_tile=0,
+    def __init__(self, imgs, model_params, result_path=None, network=MultiOutputUnet, resize_dim=(512, 512),
+                 batch_size=1, invert=False, normalization_mode='single', clip_threshold=(0., 99.8), add_tile=0,
                  show_progress=True, device: Union[torch.device, str] = 'auto',
                  progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
         """
@@ -33,6 +33,8 @@ class Predict:
             Path to the U-Net model parameters (.pth file).
         result_path : str, optional
             Path to save the prediction results as a TIFF file. If None, results are stored in the 'result' attribute.
+        network : Network, optional
+            Network architecture. Default is MultiOutputUnet
         resize_dim : Tuple[int, int]
             Dimensions to resize images for prediction.
         batch_size : int
@@ -80,9 +82,9 @@ class Predict:
 
         # load model and predict data
         self.model_params = torch.load(model_params, map_location=self.device)
-        self.model = MultiOutputUnet(in_channels=self.model_params['in_channels'],
-                                     n_filter=self.model_params['n_filter'],
-                                     output_heads=self.model_params['output_heads']).to(self.device)
+        self.model = network(in_channels=self.model_params['in_channels'],
+                             n_filter=self.model_params['n_filter'],
+                             output_heads=self.model_params['output_heads']).to(self.device)
         self.model.load_state_dict(self.model_params['state_dict'])
         self.model.eval()
         self.target_keys = self.model_params['output_heads'].keys()
@@ -225,7 +227,8 @@ class Predict:
                 for j in range(self.N_x):
                     for k in range(self.N_y):
                         stack_result_i[n, :, self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-                        self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]] = result_patches_target[i * self.N_per_img + n]
+                        self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]] = result_patches_target[
+                            i * self.N_per_img + n]
                         n += 1
 
                 # average overlapping regions

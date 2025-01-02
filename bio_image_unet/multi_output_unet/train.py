@@ -2,6 +2,7 @@ import os
 import random
 from typing import Union
 
+import torch
 import torch.optim as optim
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader, random_split
@@ -14,8 +15,8 @@ from ..utils import init_weights, get_device
 
 
 class Trainer:
-    def __init__(self, dataset, num_epochs, network=MultiOutputUnet, batch_size=4, lr=1e-3, in_channels=1,
-                 output_heads=None, n_filter=64, dilation=1,
+    def __init__(self, dataset, num_epochs, network=MultiOutputUnet, batch_size=4, lr=1e-4, in_channels=1,
+                 output_heads=None, n_filter=64,
                  val_split=0.2, save_dir='./', save_name='model.pth',
                  save_iter=False, load_weights=False,
                  device: Union[torch.device, str] = 'auto'):
@@ -25,8 +26,7 @@ class Trainer:
             self.device = torch.device(device)
 
         self.network = network
-        self.model = network(n_filter=n_filter, in_channels=in_channels, output_heads=output_heads,
-                             dilation=dilation).to(self.device)
+        self.model = network(n_filter=n_filter, in_channels=in_channels, output_heads=output_heads).to(self.device)
         self.model.apply(init_weights)
         self.data = dataset
         self.num_epochs = num_epochs
@@ -74,7 +74,6 @@ class Trainer:
             'optimizer': self.optimizer.state_dict(),
             'lr': self.lr,
             'n_filter': self.n_filter,
-            'dilation': dilation,
             'batch_size': self.batch_size,
             'augmentation': self.data.aug_factor,
             'clip_threshold': self.data.clip_threshold,
@@ -98,12 +97,24 @@ class Trainer:
     def _get_loss_function(loss_name):
         if loss_name == 'BCEDice':
             return BCEDiceLoss()
+        elif loss_name == 'Dice':
+            return BCEDiceLoss(bce_weight=0, dice_weight=1)
+        elif loss_name == 'Tversky':
+            return TverskyLoss()
+        elif loss_name == 'logcoshTversky':
+            return logcoshTverskyLoss()
         elif loss_name == 'MSE':
             return MSELoss()
         elif loss_name == 'MAE':
             return MAELoss()
-        elif loss_name == 'HuberLoss':
+        elif loss_name == 'Huber':
             return HuberLoss()
+        elif loss_name == 'DistanceGradient':
+            return DistanceGradientLoss()
+        elif loss_name == 'WeightedDistanceGradient':
+            return WeightedDistanceGradientLoss()
+        elif loss_name == 'VectorField':
+            return VectorFieldLoss()
         else:
             raise ValueError(f'Loss "{loss_name}" not defined!')
 
@@ -115,6 +126,8 @@ class Trainer:
             return torch.tanh(x)
         elif activation == 'relu':
             return torch.relu(x)
+        elif activation == 'softmax':
+            return torch.softmax(x, dim=1)
         return x
 
     def __iterate(self, epoch, mode):
@@ -187,6 +200,7 @@ class Trainer:
                         loss = loss_fn(pred, target)
                         total_loss += self.loss_weights[name] * loss
                     loss_list.append(total_loss.detach())
+
             val_loss = torch.stack(loss_list).mean()
             self.writer.add_scalar('Loss/val', val_loss.item(), epoch)
             return val_loss
@@ -202,7 +216,7 @@ class Trainer:
 
         # Plot input image, predicted, and true target images
         num_heads = len(output_heads)
-        fig, axes = plt.subplots(1, num_heads + 1, figsize=(15, 5))
+        fig, axes = plt.subplots(1, num_heads + 1, figsize=(12, 4), dpi=400)
 
         # Plot input image
         axes[0].imshow(x_i_np, cmap='gray')
@@ -216,14 +230,13 @@ class Trainer:
             else:
                 cmap = 'gray'
 
-            im = axes[i + 1].imshow(y_pred_np[name], cmap=cmap, alpha=1, label='Prediction')
+            if len(y_pred_np[name].shape) == 3:
+                im = axes[i + 1].imshow(y_pred_np[name][0], cmap=cmap, alpha=1, label='Prediction')
+            else:
+                im = axes[i + 1].imshow(y_pred_np[name], cmap=cmap, alpha=1, label='Prediction')
             # axes[i + 1].imshow(y_true_np[name], cmap='jet', alpha=0.2, label='True Target')
             axes[i + 1].set_title(f'{name} (Pred vs True)')
             axes[i + 1].axis('off')
-
-            # Add colorbar for 'length' or 'orientation'
-            if name in ['length', 'orientation']:
-                fig.colorbar(im, ax=axes[i + 1], orientation='vertical', fraction=0.046, pad=0.04)
 
         plt.suptitle(f'Epoch {epoch}, Sample {idx}')
         plt.tight_layout()

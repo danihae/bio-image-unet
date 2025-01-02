@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 # Classification loss functions
@@ -22,6 +23,7 @@ class BCEDiceLoss(nn.Module):
 
         # Combine BCE and Dice losses
         return self.bce_weight * bce_loss + self.dice_weight * dice_loss
+
 
 class TverskyLoss(nn.Module):
     def __init__(self, alpha=0.5, beta=0.5, smooth=1):
@@ -92,3 +94,89 @@ class HuberLoss(nn.Module):
         diff = torch.abs(inputs - targets)
         loss = torch.where(diff < self.delta, 0.5 * diff ** 2, self.delta * (diff - 0.5 * self.delta))
         return loss.mean()
+
+
+def gradient_loss(pred, target):
+    """Calculate gradient loss comparing spatial derivatives of pred and target."""
+    # Calculate gradients in y and x directions
+    dy_true, dx_true = torch.gradient(target, dim=(-2, -1))  # dim=-2 is y direction, dim=-1 is x direction
+    dy_pred, dx_pred = torch.gradient(pred, dim=(-2, -1))
+
+    # Calculate MSE between gradients
+    gradient_loss_y = F.mse_loss(dy_pred, dy_true)
+    gradient_loss_x = F.mse_loss(dx_pred, dx_true)
+
+    return gradient_loss_y + gradient_loss_x
+
+
+class DistanceGradientLoss(torch.nn.Module):
+    """Combined loss for distance regression with gradient preservation."""
+
+    def __init__(self, alpha=1):
+        super().__init__()
+        self.alpha = alpha
+
+    def forward(self, pred, target):
+        # Distance loss (MSE)
+        distance_loss = F.mse_loss(pred, target)
+
+        # Gradient loss
+        grad_loss = gradient_loss(pred, target)
+
+        # Combined loss
+        total_loss = distance_loss + self.alpha * grad_loss
+
+        return total_loss
+
+
+class WeightedDistanceGradientLoss(torch.nn.Module):
+    def __init__(self, alpha=1.0, beta=0.5):
+        super().__init__()
+        self.alpha = alpha  # gradient loss weight
+        self.beta = beta  # weight for non-zero regions
+
+    def forward(self, pred, target):
+        # Create weight mask for non-zero regions
+        weights = torch.where(target > 0, self.beta, 1.0 - self.beta)
+
+        # Weighted distance loss (combining MSE and MAE for robustness)
+        mse_loss = F.mse_loss(pred * weights, target * weights, reduction='mean')
+        mae_loss = F.l1_loss(pred * weights, target * weights, reduction='mean')
+        distance_loss = mse_loss + mae_loss
+
+        # Weighted gradient loss
+        grad_loss = gradient_loss(pred * weights, target * weights)
+
+        return distance_loss + self.alpha * grad_loss
+
+
+class VectorFieldLoss(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, pred_vectors, true_vectors):
+        """
+        Args:
+            pred_vectors: Predicted vector field (B, 2, H, W)
+            true_vectors: Ground truth vector field (B, 2, H, W)
+        """
+        # Compute mask where vectors are valid (not zero)
+        mask = ~((true_vectors[:, 0, :, :] == 0) & (true_vectors[:, 1, :, :] == 0))
+
+        # Expand mask for both channels
+        mask = mask.unsqueeze(1).expand(-1, 2, -1, -1)
+
+        # Compute vectors only where mask is True
+        masked_pred = pred_vectors[mask].reshape(-1, 2)
+        masked_true = true_vectors[mask].reshape(-1, 2)
+
+        # Normalize predicted vectors to unit vectors
+        pred_magnitude = torch.sqrt(torch.sum(masked_pred ** 2, dim=1))
+        normalized_pred = masked_pred / (pred_magnitude.unsqueeze(1) + 1e-7)
+
+        # True vectors should already be unit vectors
+        vector_loss = torch.mean((normalized_pred - masked_true) ** 2)
+
+        return vector_loss
+
+

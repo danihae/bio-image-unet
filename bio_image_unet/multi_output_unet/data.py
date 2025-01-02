@@ -1,4 +1,5 @@
 import os
+import random
 import shutil
 from pathlib import Path
 
@@ -14,10 +15,11 @@ from torch.utils.data import Dataset
 class DataProcess(Dataset):
     """Class for training data generation (processing, splitting, augmentation)"""
 
-    def __init__(self, image_dir, target_dirs, target_types, data_dir='../data/', dim_out=(256, 256), aug_factor=10,
-                 in_channels=1, out_channels=1, dilate_mask=0, dilate_kernel='disk', add_tile=0,
-                 val_split=0.2, invert=False, skeletonize=False, clip_threshold=(0.1, 99.9),
-                 noise_lims=(5, 25), brightness_contrast=(0.15, 0.15), blur_limit=(3, 10), create=True):
+    def __init__(self, image_dir, target_dirs, target_types, data_dir='../data/', dim_out=(256, 256),
+                 in_channels=1, out_channels=1, add_tile=0, nan_to_val=0,
+                 val_split=0.2, clip_threshold=(0.1, 99.9), aug_factor=10,
+                 noise_lims=(5, 25), brightness_contrast=(0.15, 0.15), blur_limit=(3, 10), create=True,
+                 file_filter=None):
         """
         Create training data object for network training
 
@@ -35,34 +37,30 @@ class DataProcess(Dataset):
             List of directories with targets
         dim_out : Tuple[int, int]
             Resize dimensions of images for training
-        aug_factor : int
-            Factor of image augmentation
         data_dir : str
             Base dir of temporary directories for training data
         in_channels : int
             Number of input channels of training data
         out_channels : int
             Number of output channels of training data
-        dilate_mask
-            Radius of binary dilation of masks [-2, -1, 0, 1, 2]
-        dilate_kernel : str
-            Dilation kernel ('disk' or 'square')
         add_tile : int
             Add additional tile for splitting images into tiles with more overlapping tiles
+        nan_to_val: float
+            Value to use for missing (NaN) pixels in targets
         val_split : float
             Validation split for training
-        invert : bool
-            If True, greyscale binary labels is inverted
-        skeletonize : bool
-            If True, binary labels are skeletonized
         clip_threshold : Tuple[float, float]
             Clip thresholds for intensity normalization of images
+        aug_factor : int
+            Factor of image augmentation
         noise_lims : float
-            Limits for multiplicative noise for image augmentation
+            Limits of Gaussian noise for image augmentation
         brightness_contrast : Tuple[float, float]
             Adapt brightness and contrast of images during augmentation
         create : bool, optional
             If False, existing data set in data_path is used
+        file_filter : function, optional
+            Function with filename as arg that returns bool values indicating whether to include files in the dataset
 
         Methods
         -------
@@ -81,16 +79,14 @@ class DataProcess(Dataset):
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.dim_out = dim_out
-        self.skeletonize = skeletonize
-        self.invert = invert
+        self.nan_to_val = nan_to_val
         self.clip_threshold = clip_threshold
         self.add_tile = add_tile
         self.aug_factor = aug_factor
         self.brightness_contrast = brightness_contrast
         self.noise_lims = noise_lims
-        self.dilate_mask = dilate_mask
-        self.dilate_kernel = dilate_kernel
         self.blur_limit = blur_limit
+        self.file_filter = file_filter
 
         self.val_split = val_split
         self.mode = 'train'
@@ -113,6 +109,9 @@ class DataProcess(Dataset):
         # Find all TIFF files in image_dir
         image_path = Path(self.image_dir)
         files_image = [str(file) for ext in ['*.tif', '*.tiff', '*.TIF', '*.TIFF'] for file in image_path.glob(ext)]
+
+        if self.file_filter:
+            files_image = [file for file in files_image if self.file_filter(file)]
 
         # Read and normalize images
         for file_img_i in files_image:
@@ -229,58 +228,60 @@ class DataProcess(Dataset):
                     # Add the patch data to the split list
                     self.data_split.append(patch_data)
 
-    @staticmethod
-    def __rotate_vector_field(vector_field, angle):
-        """Rotate a 2D vector field by a given angle."""
-        angle_rad = np.deg2rad(angle)
-        cos_angle = np.cos(angle_rad)
-        sin_angle = np.sin(angle_rad)
-
-        # Assuming vector_field is of shape (2, H, W) where 2 corresponds to (x, y) components
-        x, y = vector_field[0], vector_field[1]
-        x_rot = cos_angle * x - sin_angle * y
-        y_rot = sin_angle * x + cos_angle * y
-
-        return np.stack([x_rot, y_rot], axis=0)
-
     def __augment(self, p=0.8):
-        # Define the augmentation pipeline
         target_types = {key: self.target_types[key] for key in self.target_keys}
         aug_pipeline = Compose(transforms=[
-            RandomRotate90(p=1.0),
+            RandomRotate90WithOrientation(p=1.0),
             RandomBrightnessContrast(brightness_limit=self.brightness_contrast[0],
                                      contrast_limit=self.brightness_contrast[1], p=1),
             Blur(blur_limit=self.blur_limit, always_apply=False, p=0.3),
             GaussNoise(var_limit=self.noise_lims, p=0.5),
         ], p=p, additional_targets=target_types)
 
-        running_number = 0  # Initialize a running number
+        running_number = 0
+
+        def chw_to_hwc(x):
+            if len(x.shape) == 3:  # Only convert if it has channels
+                return np.transpose(x, (1, 2, 0))
+            return x
+
+        def hwc_to_chw(x):
+            if len(x.shape) == 3:  # Only convert if it has channels
+                return np.transpose(x, (2, 0, 1))
+            return x
 
         for patch_data in self.data_split:
-            image_i = patch_data['image']
-            targets_i = {key: patch_data[key] for key in patch_data if key != 'image'}
+            # Convert image and targets, only if they have channels
+            image_i = chw_to_hwc(patch_data['image'])
+            targets_i = {key: chw_to_hwc(patch_data[key])
+                         for key in patch_data if key != 'image'}
 
             data_i = {'image': image_i}
             data_i.update(targets_i)
 
             for _ in range(self.aug_factor):
-                # Apply augmentation to both image and targets
                 augmented = aug_pipeline(**data_i)
-                aug_image = augmented['image']
-                aug_targets = {key: augmented[key] for key in targets_i}
+
+                # Convert back to CHW format only if needed
+                aug_image = hwc_to_chw(augmented['image'])
+                aug_targets = {key: hwc_to_chw(augmented[key])
+                               for key in targets_i}
 
                 # Save augmented image
                 image_dir = os.path.join(self.data_dir, 'image')
                 os.makedirs(image_dir, exist_ok=True)
-                tifffile.imwrite(os.path.join(image_dir, f'image_{running_number}.tif'), aug_image)
+                tifffile.imwrite(os.path.join(image_dir, f'image_{running_number}.tif'),
+                                 aug_image)
 
                 # Save augmented targets
                 for target_key, target_value in aug_targets.items():
                     target_dir = os.path.join(self.data_dir, target_key)
                     os.makedirs(target_dir, exist_ok=True)
-                    tifffile.imwrite(os.path.join(target_dir, f'{target_key}_{running_number}.tif'), target_value)
+                    tifffile.imwrite(os.path.join(target_dir,
+                                                  f'{target_key}_{running_number}.tif'),
+                                     target_value)
 
-                running_number += 1  # Increment the running number
+                running_number += 1
 
         print(f'Augmentation completed for {len(self.data_split) * self.aug_factor} patches.')
 
@@ -310,14 +311,40 @@ class DataProcess(Dataset):
             target_path = os.path.join(self.data_dir, target_key, target_file)
             if os.path.exists(target_path):
                 target_data = tifffile.imread(target_path).astype('float32')
-                # set NaNs to -1
-                target_data[np.isnan(target_data)] = -1
-                # normalize when target_type is 'mask'
-                if self.target_types[target_key] == 'mask' and target_key != 'length':
-                    target_data = target_data / target_data.max() if target_data.max() > 0 else target_data
+                # convert to vector field if 'orientation'
+                if self.target_types[target_key] == 'orientation':
+                    target_data = np.stack([np.cos(target_data), np.sin(target_data)])
+                # set NaNs to val
+                target_data[np.isnan(target_data)] = self.nan_to_val
+                # # normalize when target_type is 'mask'
+                # if self.target_types[target_key] == 'mask':
+                #     target_data = target_data / target_data.max() if target_data.max() > 0 else target_data
                 sample[target_key] = torch.from_numpy(target_data)
             else:
                 raise FileNotFoundError(f"Target file {target_path} not found.")
 
         # Return the sample as a dictionary
         return sample
+
+
+class RandomRotate90WithOrientation(RandomRotate90):
+    def __init__(self, always_apply=False, p=0.5):
+        super().__init__(always_apply=always_apply, p=p)
+
+    def get_params(self):
+        return {"factor": random.randint(0, 3)}
+
+    def apply(self, img, factor=0, **params):
+        """For images"""
+        return np.rot90(img, factor)
+
+    def apply_to_orientation(self, img, factor=0, **params):
+        """Special handling for orientation masks"""
+        rotated = np.rot90(img, factor)
+        # Adjust angles by subtracting pi/2 * factor (clockwise rotation)
+        adjusted = (rotated - (np.pi / 2 * factor)) % (2 * np.pi)
+        return adjusted
+
+    def apply_to_mask(self, img, factor=0, **params):
+        """For all other masks, just rotate"""
+        return np.rot90(img, factor)

@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 
 
 class MultiOutputUnet(nn.Module):
-    def __init__(self, in_channels=1, output_heads: Dict[str, dict] = None, n_filter=32, dilation=1):
+    def __init__(self, in_channels=1, output_heads: Dict[str, dict] = None, n_filter=32):
         """
         Multi-output U-Net architecture supporting various output heads.
 
@@ -21,8 +21,6 @@ class MultiOutputUnet(nn.Module):
             }
         n_filter : int
             Number of base convolutional filters
-        dilation : int
-            Dilation rate for convolutions
         """
         super().__init__()
         self.output_heads = output_heads or {
@@ -30,22 +28,22 @@ class MultiOutputUnet(nn.Module):
         }
 
         # Encoder
-        self.encode1 = self.conv(in_channels=in_channels, out_channels=n_filter, dilation=dilation)
-        self.encode2 = self.conv(n_filter, n_filter, dilation=dilation)
+        self.encode1 = self.conv(in_channels=in_channels, out_channels=n_filter)
+        self.encode2 = self.conv(n_filter, n_filter)
         self.maxpool1 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.encode3 = self.conv(n_filter, 2 * n_filter, dilation=dilation)
-        self.encode4 = self.conv(2 * n_filter, 2 * n_filter, dilation=dilation)
+        self.encode3 = self.conv(n_filter, 2 * n_filter)
+        self.encode4 = self.conv(2 * n_filter, 2 * n_filter)
         self.maxpool2 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.encode5 = self.conv(2 * n_filter, 4 * n_filter, dilation=dilation)
-        self.encode6 = self.conv(4 * n_filter, 4 * n_filter, dilation=dilation)
+        self.encode5 = self.conv(2 * n_filter, 4 * n_filter)
+        self.encode6 = self.conv(4 * n_filter, 4 * n_filter)
         self.maxpool3 = nn.MaxPool2d(kernel_size=2, stride=2)
-        self.encode7 = self.conv(4 * n_filter, 8 * n_filter, dilation=dilation)
-        self.encode8 = self.conv(8 * n_filter, 8 * n_filter, dilation=dilation)
+        self.encode7 = self.conv(4 * n_filter, 8 * n_filter)
+        self.encode8 = self.conv(8 * n_filter, 8 * n_filter)
         self.maxpool4 = nn.MaxPool2d(kernel_size=2, stride=2)
 
         # Middle
-        self.middle_conv1 = self.conv(8 * n_filter, 16 * n_filter, dilation=dilation)
-        self.middle_conv2 = self.conv(16 * n_filter, 16 * n_filter, dilation=dilation)
+        self.middle_conv1 = self.conv(8 * n_filter, 16 * n_filter)
+        self.middle_conv2 = self.conv(16 * n_filter, 16 * n_filter)
 
         # Decoder
         self.up1 = nn.ConvTranspose2d(16 * n_filter, 8 * n_filter, kernel_size=2, stride=2)
