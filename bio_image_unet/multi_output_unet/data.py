@@ -1,5 +1,4 @@
 import os
-import random
 import shutil
 from pathlib import Path
 
@@ -231,7 +230,6 @@ class DataProcess(Dataset):
     def __augment(self, p=0.8):
         target_types = {key: self.target_types[key] for key in self.target_keys}
         aug_pipeline = Compose(transforms=[
-            RandomRotate90WithOrientation(p=1.0),
             RandomBrightnessContrast(brightness_limit=self.brightness_contrast[0],
                                      contrast_limit=self.brightness_contrast[1], p=1),
             Blur(blur_limit=self.blur_limit, always_apply=False, p=0.3),
@@ -250,6 +248,12 @@ class DataProcess(Dataset):
                 return np.transpose(x, (2, 0, 1))
             return x
 
+        def rotate_array(x, factor):
+            if len(x.shape) == 3 and x.shape[0] < x.shape[1]:  # CHW format
+                return np.rot90(x, factor, axes=(1, 2))
+            else:  # HW or HWC format
+                return np.rot90(x, factor)
+
         for patch_data in self.data_split:
             # Convert image and targets, only if they have channels
             image_i = chw_to_hwc(patch_data['image'])
@@ -266,6 +270,16 @@ class DataProcess(Dataset):
                 aug_image = hwc_to_chw(augmented['image'])
                 aug_targets = {key: hwc_to_chw(augmented[key])
                                for key in targets_i}
+
+                # Apply random rotation
+                factor = np.random.randint(0, 3)
+                aug_image = rotate_array(aug_image, factor=factor)
+
+                for key in aug_targets:
+                    if 'orientation' in key:
+                        # Adjust orientation values and rotate
+                        aug_targets[key] = (aug_targets[key] - (np.pi / 2 * factor)) % (2 * np.pi)
+                    aug_targets[key] = rotate_array(aug_targets[key], factor=factor)
 
                 # Save augmented image
                 image_dir = os.path.join(self.data_dir, 'image')
@@ -312,39 +326,13 @@ class DataProcess(Dataset):
             if os.path.exists(target_path):
                 target_data = tifffile.imread(target_path).astype('float32')
                 # convert to vector field if 'orientation'
-                if self.target_types[target_key] == 'orientation':
+                if target_key == 'orientation':
                     target_data = np.stack([np.cos(target_data), np.sin(target_data)])
                 # set NaNs to val
                 target_data[np.isnan(target_data)] = self.nan_to_val
-                # # normalize when target_type is 'mask'
-                # if self.target_types[target_key] == 'mask':
-                #     target_data = target_data / target_data.max() if target_data.max() > 0 else target_data
                 sample[target_key] = torch.from_numpy(target_data)
             else:
                 raise FileNotFoundError(f"Target file {target_path} not found.")
 
         # Return the sample as a dictionary
         return sample
-
-
-class RandomRotate90WithOrientation(RandomRotate90):
-    def __init__(self, always_apply=False, p=0.5):
-        super().__init__(always_apply=always_apply, p=p)
-
-    def get_params(self):
-        return {"factor": random.randint(0, 3)}
-
-    def apply(self, img, factor=0, **params):
-        """For images"""
-        return np.rot90(img, factor)
-
-    def apply_to_orientation(self, img, factor=0, **params):
-        """Special handling for orientation masks"""
-        rotated = np.rot90(img, factor)
-        # Adjust angles by subtracting pi/2 * factor (clockwise rotation)
-        adjusted = (rotated - (np.pi / 2 * factor)) % (2 * np.pi)
-        return adjusted
-
-    def apply_to_mask(self, img, factor=0, **params):
-        """For all other masks, just rotate"""
-        return np.rot90(img, factor)

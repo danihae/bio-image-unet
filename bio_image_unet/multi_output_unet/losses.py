@@ -150,9 +150,10 @@ class WeightedDistanceGradientLoss(torch.nn.Module):
         return distance_loss + self.alpha * grad_loss
 
 
-class VectorFieldLoss(nn.Module):
-    def __init__(self):
+class WeightedVectorFieldLoss(nn.Module):
+    def __init__(self, beta=0.5):
         super().__init__()
+        self.beta = beta
 
     def forward(self, pred_vectors, true_vectors):
         """
@@ -160,23 +161,18 @@ class VectorFieldLoss(nn.Module):
             pred_vectors: Predicted vector field (B, 2, H, W)
             true_vectors: Ground truth vector field (B, 2, H, W)
         """
-        # Compute mask where vectors are valid (not zero)
-        mask = ~((true_vectors[:, 0, :, :] == 0) & (true_vectors[:, 1, :, :] == 0))
+        # Create mask where vectors are valid (both components non-zero)
+        mask = ~((true_vectors[:, 0] == 0) & (true_vectors[:, 1] == 0))
 
-        # Expand mask for both channels
-        mask = mask.unsqueeze(1).expand(-1, 2, -1, -1)
+        # Create weights
+        weights = torch.where(mask, self.beta, 1.0 - self.beta)
 
-        # Compute vectors only where mask is True
-        masked_pred = pred_vectors[mask].reshape(-1, 2)
-        masked_true = true_vectors[mask].reshape(-1, 2)
+        # Weighted MSE and MAE losses
+        mse_loss = F.mse_loss(pred_vectors * weights[:, None],
+                              true_vectors * weights[:, None],
+                              reduction='mean')
+        mae_loss = F.l1_loss(pred_vectors * weights[:, None],
+                             true_vectors * weights[:, None],
+                             reduction='mean')
 
-        # Normalize predicted vectors to unit vectors
-        pred_magnitude = torch.sqrt(torch.sum(masked_pred ** 2, dim=1))
-        normalized_pred = masked_pred / (pred_magnitude.unsqueeze(1) + 1e-7)
-
-        # True vectors should already be unit vectors
-        vector_loss = torch.mean((normalized_pred - masked_true) ** 2)
-
-        return vector_loss
-
-
+        return mse_loss + mae_loss
