@@ -64,10 +64,7 @@ class MultiOutputNestedUNet(nn.Module):
         self.pool = nn.MaxPool2d(2, 2)
         self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
 
-        # Use FirstVGGBlock with Instance Norm for the first block
-        self.conv0_0 = FirstVGGBlock(in_channels, nb_filter[0], nb_filter[0])
-
-        # Regular VGGBlocks for the rest
+        self.conv0_0 = VGGBlock(in_channels, nb_filter[0], nb_filter[0])
         self.conv1_0 = VGGBlock(nb_filter[0], nb_filter[1], nb_filter[1])
         self.conv2_0 = VGGBlock(nb_filter[1], nb_filter[2], nb_filter[2])
         self.conv3_0 = VGGBlock(nb_filter[2], nb_filter[3], nb_filter[3])

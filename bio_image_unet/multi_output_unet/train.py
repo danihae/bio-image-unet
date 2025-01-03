@@ -95,26 +95,26 @@ class Trainer:
 
     @staticmethod
     def _get_loss_function(loss_name):
-        if loss_name == 'BCEDice':
+        if loss_name == 'BCEDiceLoss':
             return BCEDiceLoss()
-        elif loss_name == 'Dice':
+        elif loss_name == 'DiceLoss':
             return BCEDiceLoss(bce_weight=0, dice_weight=1)
-        elif loss_name == 'Tversky':
+        elif loss_name == 'TverskyLoss':
             return TverskyLoss()
-        elif loss_name == 'logcoshTversky':
+        elif loss_name == 'logcoshTverskyLoss':
             return logcoshTverskyLoss()
-        elif loss_name == 'MSE':
+        elif loss_name == 'MSELoss':
             return MSELoss()
-        elif loss_name == 'MAE':
+        elif loss_name == 'MAELoss':
             return MAELoss()
-        elif loss_name == 'Huber':
+        elif loss_name == 'HuberLoss':
             return HuberLoss()
-        elif loss_name == 'DistanceGradient':
+        elif loss_name == 'DistanceGradientLoss':
             return DistanceGradientLoss()
-        elif loss_name == 'WeightedDistanceGradient':
+        elif loss_name == 'WeightedDistanceGradientLoss':
             return WeightedDistanceGradientLoss()
-        elif loss_name == 'VectorField':
-            return VectorFieldLoss()
+        elif loss_name == 'WeightedVectorFieldLoss':
+            return WeightedVectorFieldLoss()
         else:
             raise ValueError(f'Loss "{loss_name}" not defined!')
 
@@ -216,12 +216,16 @@ class Trainer:
 
         # Plot input image, predicted, and true target images
         num_heads = len(output_heads)
-        fig, axes = plt.subplots(1, num_heads + 1, figsize=(12, 4), dpi=400)
+        fig, axes = plt.subplots(2, num_heads + 1, figsize=(12, 8), dpi=300)
 
-        # Plot input image
-        axes[0].imshow(x_i_np, cmap='gray')
-        axes[0].set_title('Input Image')
-        axes[0].axis('off')
+        # Plot input image in both rows
+        axes[0, 0].imshow(x_i_np, cmap='gray')
+        axes[0, 0].set_title('Input')
+        axes[0, 0].set_xticks([])
+        axes[0, 0].set_yticks([])
+        axes[1, 0].imshow(x_i_np, cmap='gray')
+        axes[1, 0].set_xticks([])
+        axes[1, 0].set_yticks([])
 
         # Plot each head's prediction and true target
         for i, name in enumerate(output_heads):
@@ -230,13 +234,23 @@ class Trainer:
             else:
                 cmap = 'gray'
 
+            # Plot prediction in top row
             if len(y_pred_np[name].shape) == 3:
-                im = axes[i + 1].imshow(y_pred_np[name][0], cmap=cmap, alpha=1, label='Prediction')
+                axes[0, i + 1].imshow(y_pred_np[name][0], cmap=cmap)
             else:
-                im = axes[i + 1].imshow(y_pred_np[name], cmap=cmap, alpha=1, label='Prediction')
-            # axes[i + 1].imshow(y_true_np[name], cmap='jet', alpha=0.2, label='True Target')
-            axes[i + 1].set_title(f'{name} (Pred vs True)')
-            axes[i + 1].axis('off')
+                axes[0, i + 1].imshow(y_pred_np[name], cmap=cmap)
+            axes[0, i + 1].set_title(f'{name} (Pred)')
+            axes[0, i + 1].set_xticks([])
+            axes[0, i + 1].set_yticks([])
+
+            # Plot ground truth in bottom row
+            if len(y_true_np[name].shape) == 3:
+                axes[1, i + 1].imshow(y_true_np[name][0], cmap=cmap)
+            else:
+                axes[1, i + 1].imshow(y_true_np[name], cmap=cmap)
+            axes[1, i + 1].set_title(f'{name} (True)')
+            axes[1, i + 1].set_xticks([])
+            axes[1, i + 1].set_yticks([])
 
         plt.suptitle(f'Epoch {epoch}, Sample {idx}')
         plt.tight_layout()
