@@ -39,8 +39,6 @@ class Predict:
             Dimensions to resize images for prediction.
         batch_size : int
             Number of images to process in each batch during prediction.
-        invert : bool
-            Whether to invert the greyscale of the image(s) before prediction.
         normalization_mode : str
             Mode for intensity normalization for 3D stacks prior to prediction. Options are:
             - 'single': Normalize each image individually.
@@ -68,7 +66,6 @@ class Predict:
         self.resize_dim = resize_dim
         self.batch_size = batch_size
         self.add_tile = add_tile
-        self.invert = invert
         self.normalization_mode = normalization_mode
         self.clip_threshold = clip_threshold
         self.result_path = result_path

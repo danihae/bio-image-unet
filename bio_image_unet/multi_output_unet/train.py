@@ -65,7 +65,7 @@ class Trainer:
         self.val_loader = DataLoader(val_data, batch_size=self.batch_size, pin_memory=True, drop_last=True)
 
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr)
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', patience=4, factor=0.1)
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', patience=5, factor=0.2)
 
         self.save_dir = save_dir
         os.makedirs(self.save_dir, exist_ok=True)
@@ -77,7 +77,8 @@ class Trainer:
             'batch_size': self.batch_size,
             'augmentation': self.data.aug_factor,
             'clip_threshold': self.data.clip_threshold,
-            'noise_lims': self.data.noise_lims,
+            'gauss_noise_lims': self.data.gauss_noise_lims,
+            'shot_noise_lims': self.data.shot_noise_lims,
             'brightness_contrast': self.data.brightness_contrast,
             'in_channels': in_channels,
             'output_heads': output_heads
@@ -134,8 +135,8 @@ class Trainer:
         if mode == 'train':
             running_loss = 0.0
             for i, batch_i in tqdm(enumerate(self.train_loader), total=len(self.train_loader), unit='batch'):
-                x_i = batch_i['image'].to(self.device)
-                y_i = {key: batch_i[key].to(self.device) for key in self.output_heads}
+                x_i = batch_i['image'].to(self.device, non_blocking=True)
+                y_i = {key: batch_i[key].to(self.device, non_blocking=True) for key in self.output_heads}
 
                 # Ensure x_i has a channel dimension
                 if x_i.dim() == 3:  # If shape is (batch_size, height, width)
@@ -164,6 +165,7 @@ class Trainer:
                 # Backward pass and optimization
                 self.optimizer.zero_grad()
                 total_loss.backward()
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                 self.optimizer.step()
 
                 running_loss += total_loss.item()
@@ -174,8 +176,8 @@ class Trainer:
             loss_list = []
             with torch.no_grad():
                 for i, batch_i in tqdm(enumerate(self.val_loader), total=len(self.val_loader), unit='batch'):
-                    x_i = batch_i['image'].to(self.device)
-                    y_i = {key: batch_i[key].to(self.device) for key in self.output_heads}
+                    x_i = batch_i['image'].to(self.device, non_blocking=True)
+                    y_i = {key: batch_i[key].to(self.device, non_blocking=True) for key in self.output_heads}
 
                     # Ensure x_i has a channel dimension
                     if x_i.dim() == 3:  # If shape is (batch_size, height, width)

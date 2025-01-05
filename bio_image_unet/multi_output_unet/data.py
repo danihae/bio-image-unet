@@ -6,7 +6,7 @@ import numpy as np
 import tifffile
 import torch
 from albumentations import (
-    Blur, GaussNoise,
+    Blur, GaussNoise, ShotNoise,
     RandomBrightnessContrast, Compose, RandomRotate90)
 from torch.utils.data import Dataset
 
@@ -17,8 +17,8 @@ class DataProcess(Dataset):
     def __init__(self, image_dir, target_dirs, target_types, data_dir='../data/', dim_out=(256, 256),
                  in_channels=1, out_channels=1, add_tile=0, nan_to_val=0,
                  val_split=0.2, clip_threshold=(0.1, 99.9), aug_factor=10,
-                 noise_lims=(5, 25), brightness_contrast=(0.15, 0.15), blur_limit=(3, 10), create=True,
-                 file_filter=None):
+                 gauss_noise_lims=(0, 0), shot_noise_lims=(0.005, 0.01), brightness_contrast=(0.1, 0.05),
+                 blur_limit=(3, 9), create=True, file_filter=None):
         """
         Create training data object for network training
 
@@ -52,8 +52,10 @@ class DataProcess(Dataset):
             Clip thresholds for intensity normalization of images
         aug_factor : int
             Factor of image augmentation
-        noise_lims : float
+        gauss_noise_lims : Tuple[float, float]
             Limits of Gaussian noise for image augmentation
+        shot_noise_lims : Tuple[float, float]
+            Limits of Shot noise for image augmentation
         brightness_contrast : Tuple[float, float]
             Adapt brightness and contrast of images during augmentation
         create : bool, optional
@@ -83,7 +85,8 @@ class DataProcess(Dataset):
         self.add_tile = add_tile
         self.aug_factor = aug_factor
         self.brightness_contrast = brightness_contrast
-        self.noise_lims = noise_lims
+        self.gauss_noise_lims = gauss_noise_lims
+        self.shot_noise_lims = shot_noise_lims
         self.blur_limit = blur_limit
         self.file_filter = file_filter
 
@@ -233,7 +236,8 @@ class DataProcess(Dataset):
             RandomBrightnessContrast(brightness_limit=self.brightness_contrast[0],
                                      contrast_limit=self.brightness_contrast[1], p=1),
             Blur(blur_limit=self.blur_limit, always_apply=False, p=0.3),
-            GaussNoise(var_limit=self.noise_lims, p=0.5),
+            ShotNoise(scale_range=self.shot_noise_lims, p=0.5),
+            GaussNoise(var_limit=self.gauss_noise_lims, p=0.5),
         ], p=p, additional_targets=target_types)
 
         running_number = 0
