@@ -1,9 +1,9 @@
 [tool.poetry]
 name = "bio-image-unet"
 packages = [
-    { include = "biu" }
+    { include = "bio_image_unet" }
 ]
-version = "1.0.0-alpha.4"
+version = "1.0.0"
 description = "Implementations of U-Net, Siam U-Net and 3D U-Net for biological image segmentation"
 authors = ["Daniel Haertter", "Yuxi Long"]
 readme = "README.md"
