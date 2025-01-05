@@ -4,7 +4,7 @@ import shutil
 from skimage import morphology
 from albumentations import (
     ShiftScaleRotate, Blur, MultiplicativeNoise,
-    RandomBrightnessContrast, Flip, Compose, RandomRotate90)
+    RandomBrightnessContrast, Compose, RandomRotate90)
 
 import numpy as np
 import tifffile
@@ -218,7 +218,6 @@ class DataProcess(Dataset):
 
     def __augment(self, p=0.8):
         aug_pipeline = Compose(transforms=[
-            Flip(),
             RandomRotate90(p=1.0),
             ShiftScaleRotate(self.shiftscalerotate[0], self.shiftscalerotate[1], self.shiftscalerotate[2]),
             RandomBrightnessContrast(brightness_limit=self.brightness_contrast[0],
