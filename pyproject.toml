@@ -12,7 +12,7 @@ repository = "https://github.com/danihae/bio-image-unet"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-albumentations = "^1.4"
+albumentations = "^1.4.24"
 tifffile = "*"
 tqdm = "^4.61"
 numpy = "^1.20"
