@@ -54,12 +54,10 @@ class DataProcess(Dataset):
         Clip thresholds for intensity normalization of images
     shiftscalerotate : [float, float, float]
         Shift, scale and rotate image during augmentation
-    noise_amp : float
+    noise_lims : float
         Amplitude of Gaussian noise for image augmentation
     brightness_contrast : Tuple[float, float]
         Adapt brightness and contrast of images during augmentation
-    rescale : float, optional
-        Rescale all images and labels by factor rescale
     create : bool, optional
         If False, existing data set in data_path is used
     """
@@ -67,7 +65,7 @@ class DataProcess(Dataset):
     def __init__(self, source_dir, dim_out=(256, 256), aug_factor=10, data_path='../data/', in_channels=1,
                  out_channels=1, dilate_mask=0, dilate_kernel='disk', add_tile=0,
                  val_split=0.2, invert=False, skeletonize=False, clip_threshold=(0.2, 99.8), shiftscalerotate=(0, 0, 0),
-                 noise_lims=(0.5, 1.2), brightness_contrast=(0.25, 0.25), blur_limit=(2, 7), rescale=None, create=True):
+                 noise_lims=(0.5, 1.2), brightness_contrast=(0.25, 0.25), blur_limit=(3, 7), create=True):
 
         self.source_dir = source_dir
         self.create = create
