@@ -151,9 +151,10 @@ class WeightedDistanceGradientLoss(torch.nn.Module):
 
 
 class WeightedVectorFieldLoss(nn.Module):
-    def __init__(self, beta=0.5):
+    def __init__(self, beta=0.5, magnitude_weight=0.3):
         super().__init__()
         self.beta = beta
+        self.magnitude_weight = magnitude_weight
 
     def forward(self, pred_vectors, true_vectors):
         """
@@ -167,7 +168,7 @@ class WeightedVectorFieldLoss(nn.Module):
         # Create weights
         weights = torch.where(mask, self.beta, 1.0 - self.beta)
 
-        # Weighted MSE and MAE losses
+        # Component-wise losses
         mse_loss = F.mse_loss(pred_vectors * weights[:, None],
                               true_vectors * weights[:, None],
                               reduction='mean')
@@ -175,4 +176,11 @@ class WeightedVectorFieldLoss(nn.Module):
                              true_vectors * weights[:, None],
                              reduction='mean')
 
-        return mse_loss + mae_loss
+        # Magnitude loss
+        pred_magnitude = torch.sum(pred_vectors ** 2, dim=1)
+        true_magnitude = torch.sum(true_vectors ** 2, dim=1)
+        magnitude_loss = F.mse_loss(pred_magnitude * weights,
+                                    true_magnitude * weights,
+                                    reduction='mean')
+
+        return mse_loss + mae_loss + self.magnitude_weight * magnitude_loss
