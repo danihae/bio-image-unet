@@ -1,3 +1,4 @@
+import os.path
 from typing import Union
 
 import numpy as np
@@ -13,7 +14,7 @@ class Predict:
     """Class for prediction of movies and images using a U-Net model."""
 
     def __init__(self, imgs, model_params, result_path=None, network=MultiOutputUnet, resize_dim=(512, 512),
-                 batch_size=1, invert=False, normalization_mode='single', clip_threshold=(0., 99.8), add_tile=0,
+                 batch_size=1, normalization_mode='single', clip_threshold=(0., 99.8), add_tile=0,
                  show_progress=True, device: Union[torch.device, str] = 'auto',
                  progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
         """
@@ -95,7 +96,10 @@ class Predict:
         if self.result_path is not None:
             # save as .tif files
             for target_key in self.target_keys:
-                tifffile.imwrite(self.result_path + '_' + target_key + '.tif', result[target_key])
+                if os.path.isdir(self.result_path):
+                    tifffile.imwrite(self.result_path + target_key + '.tif', result[target_key])
+                else:
+                    tifffile.imwrite(self.result_path + '_' + target_key + '.tif', result[target_key])
             del result
             self.result = None
         else:
@@ -117,8 +121,6 @@ class Predict:
                               a_max=np.percentile(img, self.clip_threshold[1]))
                 img = img - np.min(img)
                 img = img / np.max(img) * 255
-                if self.invert:
-                    img = 255 - img
                 imgs[i] = img
         elif self.normalization_mode == 'first':
             clip_threshold = (np.nanpercentile(imgs[0], self.clip_threshold[0]),
@@ -126,16 +128,12 @@ class Predict:
             imgs = np.clip(imgs, clip_threshold[0], clip_threshold[1])
             imgs = imgs - np.min(imgs)
             imgs = imgs / np.max(imgs) * 255
-            if self.invert:
-                imgs = 255 - imgs
         elif self.normalization_mode == 'all':
             clip_threshold = (np.nanpercentile(imgs, self.clip_threshold[0]),
                               np.percentile(imgs, self.clip_threshold[1]))
             imgs = np.clip(imgs, clip_threshold[0], clip_threshold[1])
             imgs = imgs - np.min(imgs)
             imgs = imgs / np.max(imgs) * 255
-            if self.invert:
-                imgs = 255 - imgs
         else:
             raise ValueError(f'normalization_mode {self.normalization_mode} not valid!')
         return imgs
