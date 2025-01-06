@@ -17,8 +17,8 @@ class DataProcess(Dataset):
     def __init__(self, image_dir, target_dirs, target_types, data_dir='../data/', dim_out=(256, 256),
                  in_channels=1, out_channels=1, add_tile=0, nan_to_val=0,
                  val_split=0.2, clip_threshold=(0.1, 99.9), aug_factor=10,
-                 gauss_noise_lims=(0, 0), shot_noise_lims=(0.005, 0.01), brightness_contrast=(0.1, 0.05),
-                 blur_limit=(3, 9), create=True, file_filter=None):
+                 gauss_noise_lims=(0.05, 0.1), shot_noise_lims=(0.005, 0.01), brightness_contrast=(0.1, 0.1),
+                 blur_limit=(3, 7), create=True, file_filter=None):
         """
         Create training data object for network training
 
@@ -110,7 +110,7 @@ class DataProcess(Dataset):
     def __read_and_edit(self):
         # Find all TIFF files in image_dir
         image_path = Path(self.image_dir)
-        files_image = [str(file) for ext in ['*.tif', '*.tiff', '*.TIF', '*.TIFF'] for file in image_path.glob(ext)]
+        files_image = [str(file) for ext in ['*.tif', '*.tiff'] for file in image_path.glob(ext)]
 
         if self.file_filter:
             files_image = [file for file in files_image if self.file_filter(file)]
@@ -234,10 +234,10 @@ class DataProcess(Dataset):
         target_types = {key: self.target_types[key] for key in self.target_keys}
         aug_pipeline = Compose(transforms=[
             RandomBrightnessContrast(brightness_limit=self.brightness_contrast[0],
-                                     contrast_limit=self.brightness_contrast[1], p=1),
-            Blur(blur_limit=self.blur_limit, always_apply=False, p=0.3),
-            ShotNoise(scale_range=self.shot_noise_lims, p=0.5),
-            GaussNoise(var_limit=self.gauss_noise_lims, p=0.5),
+                                     contrast_limit=self.brightness_contrast[1], p=0.5),
+            Blur(blur_limit=self.blur_limit, always_apply=False, p=0.25),
+            ShotNoise(scale_range=self.shot_noise_lims, p=0.25),
+            GaussNoise(std_range=self.gauss_noise_lims, p=0.25),
         ], p=p, additional_targets=target_types)
 
         running_number = 0
