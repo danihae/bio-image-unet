@@ -2,24 +2,23 @@ import os
 import random
 from typing import Union
 
-import torch
 import torch.optim as optim
 from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader, random_split
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
+from .data import DataProcess
 from .losses import *
 from .multi_output_unet import MultiOutputUnet
 from ..utils import init_weights, get_device
 
 
 class Trainer:
-    def __init__(self, dataset, num_epochs, network=MultiOutputUnet, batch_size=4, lr=1e-4, in_channels=1,
-                 output_heads=None, n_filter=64,
-                 val_split=0.2, save_dir='./', save_name='model.pth',
-                 save_iter=False, load_weights=False,
-                 device: Union[torch.device, str] = 'auto'):
+    def __init__(self, dataset: DataProcess, num_epochs: int, network=MultiOutputUnet, batch_size: int = 4,
+                 lr: float = 1e-4, in_channels: int = 1, output_heads: Union[None, dict] = None, n_filter: int = 64,
+                 val_split: float = 0.2, save_dir: str = './', save_name: str = 'model.pth', save_iter: bool = False,
+                 load_weights: bool = False, device: Union[torch.device, str] = 'auto'):
         if device == 'auto':
             self.device = get_device()
         else:
@@ -68,7 +67,9 @@ class Trainer:
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='min', patience=5, factor=0.2)
 
         self.save_dir = save_dir
+        self.save_dir_val_result = save_dir + '/val_results/'
         os.makedirs(self.save_dir, exist_ok=True)
+        os.makedirs(self.save_dir_val_result, exist_ok=True)
         self.save_name = save_name
         self.params = {
             'optimizer': self.optimizer.state_dict(),
@@ -80,6 +81,7 @@ class Trainer:
             'gauss_noise_lims': self.data.gauss_noise_lims,
             'shot_noise_lims': self.data.shot_noise_lims,
             'brightness_contrast': self.data.brightness_contrast,
+            'random_rotate': self.data.random_rotate,
             'in_channels': in_channels,
             'output_heads': output_heads
         }
@@ -91,7 +93,7 @@ class Trainer:
         self.writer = SummaryWriter(log_dir=os.path.join(self.save_dir, 'logs'))
 
         # Set a fixed random seed for reproducibility
-        self.random_seed = 42
+        self.random_seed = 27
         random.seed(self.random_seed)
 
     @staticmethod
@@ -209,8 +211,7 @@ class Trainer:
 
         torch.cuda.empty_cache()
 
-    @staticmethod
-    def plot_images(epoch, idx, x_i, y_pred, y_true, output_heads):
+    def plot_images(self, epoch, idx, x_i, y_pred, y_true, output_heads):
         # Convert tensors to numpy arrays for plotting
         x_i_np = x_i.cpu().numpy().squeeze()
         y_pred_np = {name: pred.cpu().numpy().squeeze() for name, pred in y_pred.items()}
@@ -256,7 +257,8 @@ class Trainer:
 
         plt.suptitle(f'Epoch {epoch}, Sample {idx}')
         plt.tight_layout()
-        plt.show()
+        plt.savefig(self.save_dir_val_result + f'Epoch {epoch}, Sample {idx}.png')
+        plt.close()
 
     def log_validation_images(self, epoch, num_images):
         with torch.no_grad():

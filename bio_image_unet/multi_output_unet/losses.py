@@ -13,6 +13,9 @@ class BCEDiceLoss(nn.Module):
         self.bce = nn.BCELoss()  # Use BCELoss for probabilities
 
     def forward(self, inputs, targets):
+        assert torch.all((inputs >= 0) & (inputs <= 1)), "Inputs must be between 0 and 1"
+        assert torch.all((targets >= 0) & (targets <= 1)), "Targets must be between 0 and 1"
+
         # Compute BCE loss with probabilities
         bce_loss = self.bce(inputs, targets)
 

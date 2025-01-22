@@ -1,24 +1,42 @@
 import os
+import random
 import shutil
 from pathlib import Path
+from typing import List, Tuple, Optional, Callable
 
 import numpy as np
 import tifffile
 import torch
 from albumentations import (
     Blur, GaussNoise, ShotNoise,
-    RandomBrightnessContrast, Compose, RandomRotate90)
+    RandomBrightnessContrast, Compose)
+from scipy.ndimage import rotate
 from torch.utils.data import Dataset
 
 
 class DataProcess(Dataset):
     """Class for training data generation (processing, splitting, augmentation)"""
 
-    def __init__(self, image_dir, target_dirs, target_types, data_dir='../data/', dim_out=(256, 256),
-                 in_channels=1, out_channels=1, add_tile=0, nan_to_val=0,
-                 val_split=0.2, clip_threshold=(0.1, 99.9), aug_factor=10,
-                 gauss_noise_lims=(0.05, 0.1), shot_noise_lims=(0.005, 0.01), brightness_contrast=(0.1, 0.1),
-                 blur_limit=(3, 7), create=True, file_filter=None):
+    def __init__(self,
+                 image_dir: str,
+                 target_dirs: List[str],
+                 target_types: List[str],
+                 data_dir: str = '../data/',
+                 dim_out: Tuple[int, int] = (256, 256),
+                 in_channels: int = 1,
+                 out_channels: int = 1,
+                 add_tile: int = 0,
+                 nan_to_val: float = 0,
+                 val_split: float = 0.2,
+                 clip_threshold: Tuple[float, float] = (0., 99.99),
+                 aug_factor: int = 10,
+                 gauss_noise_lims: Tuple[float, float] = (0.01, 0.1),
+                 shot_noise_lims: Tuple[float, float] = (0.005, 0.01),
+                 brightness_contrast: Tuple[float, float] = (0.1, 0.1),
+                 blur_limit: Tuple[int, int] = (3, 7),
+                 random_rotate: bool = True,
+                 create: bool = True,
+                 file_filter: Optional[Callable[[str], bool]] = None):
         """
         Create training data object for network training
 
@@ -58,6 +76,8 @@ class DataProcess(Dataset):
             Limits of Shot noise for image augmentation
         brightness_contrast : Tuple[float, float]
             Adapt brightness and contrast of images during augmentation
+        random_rotate : bool
+            Whether to randomly rotate images during augmentation
         create : bool, optional
             If False, existing data set in data_path is used
         file_filter : function, optional
@@ -72,7 +92,7 @@ class DataProcess(Dataset):
         """
         self.image_dir = image_dir
         self.target_dirs = target_dirs
-        self.target_keys = [os.path.basename(os.path.normpath(dir)) for dir in target_dirs]
+        self.target_keys = [os.path.basename(os.path.normpath(_dir)) for _dir in target_dirs]
         self.target_types = target_types
         self.data_dir = data_dir
         self.data = []  # empty list for data dicts
@@ -88,6 +108,7 @@ class DataProcess(Dataset):
         self.gauss_noise_lims = gauss_noise_lims
         self.shot_noise_lims = shot_noise_lims
         self.blur_limit = blur_limit
+        self.random_rotate = random_rotate
         self.file_filter = file_filter
 
         self.val_split = val_split
@@ -123,12 +144,11 @@ class DataProcess(Dataset):
             # Create dict for image and targets
             data_i = {}
 
-            # Clip and normalize (0,255)
+            # Clip and normalize
             img_i = img_i.astype(np.float32)
             img_i = np.clip(img_i, a_min=np.nanpercentile(img_i, self.clip_threshold[0]),
                             a_max=np.percentile(img_i, self.clip_threshold[1]))
-            img_i = (img_i - np.nanmin(img_i)) / (np.nanmax(img_i) - np.nanmin(img_i)) * 255
-            img_i = img_i.astype('uint8')
+            img_i = (img_i - np.nanmin(img_i)) / (np.nanmax(img_i) - np.nanmin(img_i))
 
             # Add image to dict
             data_i['image'] = img_i
@@ -252,7 +272,37 @@ class DataProcess(Dataset):
                 return np.transpose(x, (2, 0, 1))
             return x
 
-        def rotate_array(x, factor):
+        def rotate_array(x, angle, order=3):
+            # Convert bool arrays to float32 first
+            if x.dtype == bool or x.dtype == np.bool_:
+                x = x.astype(np.float32)
+                min_val, max_val = 0, 1
+                needs_clip = True
+            else:
+                # Check input array range for non-boolean arrays
+                min_val = np.nanmin(x)
+                max_val = np.nanmax(x)
+                needs_clip = min_val >= -1 and max_val <= 1
+
+            if np.any(np.isnan(x)):
+                nan_mask = np.isnan(x)
+                x_filled = np.where(nan_mask, 0, x)
+                rotated = rotate(x_filled, angle, reshape=False, mode='grid-wrap', order=order)
+                rotated_mask = rotate(nan_mask.astype(np.uint8), angle, reshape=False,
+                                      mode='grid-wrap', order=order) > 0.5
+                rotated = rotated.astype(np.float32)
+                rotated[rotated_mask] = np.nan
+            else:
+                rotated = rotate(x, angle, reshape=False, mode='grid-wrap', order=order)
+                rotated = rotated.astype(np.float32)
+
+            # Clip boolean-originated and [-1, 1] range arrays
+            if needs_clip:
+                rotated = np.clip(rotated, min_val, max_val)
+
+            return rotated
+
+        def rotate_array_90(x, factor):
             if len(x.shape) == 3 and x.shape[0] < x.shape[1]:  # CHW format
                 return np.rot90(x, factor, axes=(1, 2))
             else:  # HW or HWC format
@@ -275,15 +325,25 @@ class DataProcess(Dataset):
                 aug_targets = {key: hwc_to_chw(augmented[key])
                                for key in targets_i}
 
-                # Apply random rotation
-                factor = np.random.randint(0, 3)
-                aug_image = rotate_array(aug_image, factor=factor)
+                if self.random_rotate:
+                    if random.random() < 0.5:
+                        # Apply random rotation with any angle
+                        angle = np.random.uniform(0, 360)
+                        aug_image = rotate_array(aug_image, angle, order=0)
 
-                for key in aug_targets:
-                    if 'orientation' in key:
-                        # Adjust orientation values and rotate
-                        aug_targets[key] = (aug_targets[key] - (np.pi / 2 * factor)) % (2 * np.pi)
-                    aug_targets[key] = rotate_array(aug_targets[key], factor=factor)
+                        for key in aug_targets:
+                            if 'orientation' in key:
+                                aug_targets[key] = (aug_targets[key] - np.radians(angle)) % (2 * np.pi)
+                            aug_targets[key] = rotate_array(aug_targets[key], angle, order=3)
+                    else:
+                        # Apply random rotation by 90 degree
+                        factor = np.random.randint(0, 3)
+                        aug_image = rotate_array_90(aug_image, factor=factor)
+                        for key in aug_targets:
+                            if 'orientation' in key:
+                                # Adjust orientation values and rotate
+                                aug_targets[key] = (aug_targets[key] - (np.pi / 2 * factor)) % (2 * np.pi)
+                            aug_targets[key] = rotate_array_90(aug_targets[key], factor=factor)
 
                 # Save augmented image
                 image_dir = os.path.join(self.data_dir, 'image')
@@ -314,7 +374,7 @@ class DataProcess(Dataset):
 
         # Read the image from the 'image' directory
         image_path = os.path.join(self.data_dir, 'image', img_name)
-        image_0 = tifffile.imread(image_path).astype('float32') / 255
+        image_0 = tifffile.imread(image_path)
 
         # Convert the image to a PyTorch tensor
         image = torch.from_numpy(image_0)
