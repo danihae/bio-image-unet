@@ -10,22 +10,23 @@ from tqdm import tqdm
 
 from .data import DataProcess
 from .losses import *
-from .multi_output_unet import MultiOutputUnet
+from .multi_output_nested_unet import MultiOutputNestedUNet
 from ..utils import init_weights, get_device
 
 
 class Trainer:
-    def __init__(self, dataset: DataProcess, num_epochs: int, network=MultiOutputUnet, batch_size: int = 4,
+    def __init__(self, dataset: DataProcess, num_epochs: int, network=MultiOutputNestedUNet, batch_size: int = 4,
                  lr: float = 1e-4, in_channels: int = 1, output_heads: Union[None, dict] = None, n_filter: int = 64,
-                 val_split: float = 0.2, save_dir: str = './', save_name: str = 'model.pth', save_iter: bool = False,
-                 load_weights: bool = False, device: Union[torch.device, str] = 'auto'):
+                 deep_supervision: bool = False, val_split: float = 0.2, save_dir: str = './',
+                 save_name: str = 'model.pth', save_iter: bool = False, load_weights: bool = False,
+                 device: Union[torch.device, str] = 'auto'):
         if device == 'auto':
             self.device = get_device()
         else:
             self.device = torch.device(device)
 
-        self.network = network
-        self.model = network(n_filter=n_filter, in_channels=in_channels, output_heads=output_heads).to(self.device)
+        self.model = network(n_filter=n_filter, in_channels=in_channels, output_heads=output_heads,
+                             deep_supervision=deep_supervision).to(self.device)
         self.model.apply(init_weights)
         self.data = dataset
         self.num_epochs = num_epochs
@@ -75,6 +76,7 @@ class Trainer:
             'optimizer': self.optimizer.state_dict(),
             'lr': self.lr,
             'n_filter': self.n_filter,
+            'deep_supervision': deep_supervision,
             'batch_size': self.batch_size,
             'augmentation': self.data.aug_factor,
             'clip_threshold': self.data.clip_threshold,
@@ -93,7 +95,7 @@ class Trainer:
         self.writer = SummaryWriter(log_dir=os.path.join(self.save_dir, 'logs'))
 
         # Set a fixed random seed for reproducibility
-        self.random_seed = 27
+        self.random_seed = 42
         random.seed(self.random_seed)
 
     @staticmethod
@@ -140,29 +142,31 @@ class Trainer:
                 x_i = batch_i['image'].to(self.device, non_blocking=True)
                 y_i = {key: batch_i[key].to(self.device, non_blocking=True) for key in self.output_heads}
 
-                # Ensure x_i has a channel dimension
-                if x_i.dim() == 3:  # If shape is (batch_size, height, width)
-                    x_i = x_i.unsqueeze(1)  # Add channel dimension
+                if x_i.dim() == 3:
+                    x_i = x_i.unsqueeze(1)
 
                 # Forward pass
                 y_pred = self.model(x_i)
 
-                # Apply activations
-                y_pred = {name: self._apply_activation(pred, self.activations.get(name)) for name, pred in
-                          y_pred.items()}
-
-                # Compute combined loss
+                # Handle deep supervision outputs
                 total_loss = 0
-                for name, pred in y_pred.items():
+                for name, config in self.output_heads.items():
                     target = y_i[name]
+                    if target.dim() == 3:
+                        target = target.unsqueeze(1)
 
-                    # Ensure target has a channel dimension
-                    if target.dim() == 3:  # If shape is (batch_size, height, width)
-                        target = target.unsqueeze(1)  # Add channel dimension
-
-                    loss_fn = self.loss_functions[name]
-                    loss = loss_fn(pred, target)
-                    total_loss += self.loss_weights[name] * loss
+                    if self.model.deep_supervision:
+                        # Calculate loss for each deep supervision output
+                        supervision_weights = [0.5, 0.75, 0.875, 1.0]  # Weights for different supervision levels
+                        for level, weight in enumerate(supervision_weights, 1):
+                            pred_key = f"{name}_{level}"
+                            pred = y_pred[pred_key]
+                            loss = self.loss_functions[name](pred, target)
+                            total_loss += weight * self.loss_weights[name] * loss
+                    else:
+                        pred = y_pred[name]
+                        loss = self.loss_functions[name](pred, target)
+                        total_loss += self.loss_weights[name] * loss
 
                 # Backward pass and optimization
                 self.optimizer.zero_grad()
@@ -171,6 +175,7 @@ class Trainer:
                 self.optimizer.step()
 
                 running_loss += total_loss.item()
+
             avg_train_loss = running_loss / len(self.train_loader)
             self.writer.add_scalar('Loss/train', avg_train_loss, epoch)
 
@@ -181,28 +186,31 @@ class Trainer:
                     x_i = batch_i['image'].to(self.device, non_blocking=True)
                     y_i = {key: batch_i[key].to(self.device, non_blocking=True) for key in self.output_heads}
 
-                    # Ensure x_i has a channel dimension
-                    if x_i.dim() == 3:  # If shape is (batch_size, height, width)
-                        x_i = x_i.unsqueeze(1)  # Add channel dimension
+                    if x_i.dim() == 3:
+                        x_i = x_i.unsqueeze(1)
 
                     # Forward pass
                     y_pred = self.model(x_i)
 
-                    # Apply activations
-                    y_pred = {name: self._apply_activation(pred, self.activations.get(name)) for name, pred in
-                              y_pred.items()}
-
                     # Compute combined loss
                     total_loss = 0
-                    for name, pred in y_pred.items():
+                    for name in self.output_heads:
                         target = y_i[name]
-                        # Ensure target has a channel dimension
-                        if target.dim() == 3:  # If shape is (batch_size, height, width)
-                            target = target.unsqueeze(1)  # Add channel dimension
+                        if target.dim() == 3:
+                            target = target.unsqueeze(1)
 
-                        loss_fn = self.loss_functions[name]
-                        loss = loss_fn(pred, target)
-                        total_loss += self.loss_weights[name] * loss
+                        if hasattr(self.model, 'deep_supervision') and self.model.deep_supervision:
+                            supervision_weights = [0.5, 0.75, 0.875, 1.0]
+                            for level, weight in enumerate(supervision_weights, 1):
+                                pred_key = f"{name}_{level}"
+                                pred = self._apply_activation(y_pred[pred_key], self.activations.get(name))
+                                loss = self.loss_functions[name](pred, target)
+                                total_loss += weight * self.loss_weights[name] * loss
+                        else:
+                            pred = self._apply_activation(y_pred[name], self.activations.get(name))
+                            loss = self.loss_functions[name](pred, target)
+                            total_loss += self.loss_weights[name] * loss
+
                     loss_list.append(total_loss.detach())
 
             val_loss = torch.stack(loss_list).mean()
@@ -212,48 +220,85 @@ class Trainer:
         torch.cuda.empty_cache()
 
     def plot_images(self, epoch, idx, x_i, y_pred, y_true, output_heads):
-        # Convert tensors to numpy arrays for plotting
         x_i_np = x_i.cpu().numpy().squeeze()
-        y_pred_np = {name: pred.cpu().numpy().squeeze() for name, pred in y_pred.items()}
-        y_true_np = {name: true.cpu().numpy().squeeze() for name, true in y_true.items()}
 
-        # Plot input image, predicted, and true target images
-        num_heads = len(output_heads)
-        fig, axes = plt.subplots(2, num_heads + 1, figsize=(12, 8), dpi=300)
+        if hasattr(self.model, 'deep_supervision') and self.model.deep_supervision:
+            num_heads = len(output_heads)
+            num_levels = 4  # Number of deep supervision levels
+            fig, axes = plt.subplots(2 + num_levels, num_heads + 1, figsize=(12, 12), dpi=300)
 
-        # Plot input image in both rows
-        axes[0, 0].imshow(x_i_np, cmap='gray')
-        axes[0, 0].set_title('Input')
-        axes[0, 0].set_xticks([])
-        axes[0, 0].set_yticks([])
-        axes[1, 0].imshow(x_i_np, cmap='gray')
-        axes[1, 0].set_xticks([])
-        axes[1, 0].set_yticks([])
+            # Plot input image
+            for row in range(2 + num_levels):
+                axes[row, 0].imshow(x_i_np, cmap='gray')
+                axes[row, 0].set_title('Input' if row == 0 else '')
+                axes[row, 0].set_xticks([])
+                axes[row, 0].set_yticks([])
 
-        # Plot each head's prediction and true target
-        for i, name in enumerate(output_heads):
-            if name in ['length', 'orientation']:
-                cmap = 'viridis'
-            else:
-                cmap = 'gray'
+            for i, name in enumerate(output_heads):
+                cmap = 'viridis' if name in ['length', 'orientation'] else 'gray'
 
-            # Plot prediction in top row
-            if len(y_pred_np[name].shape) == 3:
-                axes[0, i + 1].imshow(y_pred_np[name][0], cmap=cmap)
-            else:
-                axes[0, i + 1].imshow(y_pred_np[name], cmap=cmap)
-            axes[0, i + 1].set_title(f'{name} (Pred)')
-            axes[0, i + 1].set_xticks([])
-            axes[0, i + 1].set_yticks([])
+                # Plot final prediction
+                final_pred = y_pred[f"{name}_4"].cpu().numpy().squeeze()
+                if len(final_pred.shape) == 3:
+                    final_pred = final_pred[0]
+                axes[0, i + 1].imshow(final_pred, cmap=cmap)
+                axes[0, i + 1].set_title(f'{name} (Final)')
+                axes[0, i + 1].set_xticks([])
+                axes[0, i + 1].set_yticks([])
 
-            # Plot ground truth in bottom row
-            if len(y_true_np[name].shape) == 3:
-                axes[1, i + 1].imshow(y_true_np[name][0], cmap=cmap)
-            else:
-                axes[1, i + 1].imshow(y_true_np[name], cmap=cmap)
-            axes[1, i + 1].set_title(f'{name} (True)')
-            axes[1, i + 1].set_xticks([])
-            axes[1, i + 1].set_yticks([])
+                # Plot ground truth
+                y_true_np = y_true[name].cpu().numpy().squeeze()
+                if len(y_true_np.shape) == 3:
+                    y_true_np = y_true_np[0]
+                axes[1, i + 1].imshow(y_true_np, cmap=cmap)
+                axes[1, i + 1].set_title(f'{name} (True)')
+                axes[1, i + 1].set_xticks([])
+                axes[1, i + 1].set_yticks([])
+
+                # Plot intermediate supervision outputs
+                for level in range(1, 5):
+                    pred_key = f"{name}_{level}"
+                    pred = y_pred[pred_key].cpu().numpy().squeeze()
+                    if len(pred.shape) == 3:
+                        pred = pred[0]
+                    axes[level + 1, i + 1].imshow(pred, cmap=cmap)
+                    axes[level + 1, i + 1].set_title(f'Level {level}')
+                    axes[level + 1, i + 1].set_xticks([])
+                    axes[level + 1, i + 1].set_yticks([])
+        else:
+            # Original plotting code for non-deep supervision
+            num_heads = len(output_heads)
+            fig, axes = plt.subplots(2, num_heads + 1, figsize=(12, 8), dpi=300)
+
+            # Plot input image in both rows
+            axes[0, 0].imshow(x_i_np, cmap='gray')
+            axes[0, 0].set_title('Input')
+            axes[0, 0].set_xticks([])
+            axes[0, 0].set_yticks([])
+            axes[1, 0].imshow(x_i_np, cmap='gray')
+            axes[1, 0].set_xticks([])
+            axes[1, 0].set_yticks([])
+
+            for i, name in enumerate(output_heads):
+                cmap = 'viridis' if name in ['length', 'orientation'] else 'gray'
+
+                # Plot prediction in top row
+                pred_np = y_pred[name].cpu().numpy().squeeze()
+                if len(pred_np.shape) == 3:
+                    pred_np = pred_np[0]
+                axes[0, i + 1].imshow(pred_np, cmap=cmap)
+                axes[0, i + 1].set_title(f'{name} (Pred)')
+                axes[0, i + 1].set_xticks([])
+                axes[0, i + 1].set_yticks([])
+
+                # Plot ground truth in bottom row
+                true_np = y_true[name].cpu().numpy().squeeze()
+                if len(true_np.shape) == 3:
+                    true_np = true_np[0]
+                axes[1, i + 1].imshow(true_np, cmap=cmap)
+                axes[1, i + 1].set_title(f'{name} (True)')
+                axes[1, i + 1].set_xticks([])
+                axes[1, i + 1].set_yticks([])
 
         plt.suptitle(f'Epoch {epoch}, Sample {idx}')
         plt.tight_layout()
@@ -262,44 +307,48 @@ class Trainer:
 
     def log_validation_images(self, epoch, num_images):
         with torch.no_grad():
-            # Collect all validation data indices
             all_indices = list(range(len(self.val_loader.dataset)))
-
-            # Randomly select a subset of indices with a fixed seed
             random.seed(self.random_seed)
             selected_indices = random.sample(all_indices, min(num_images, len(all_indices)))
 
             for idx in selected_indices:
-                # Get the batch corresponding to the selected index
                 batch_i = self.val_loader.dataset[idx]
 
-                x_i = batch_i['image'].unsqueeze(0).to(self.device)  # Add batch dimension
-                # Ensure x_i has a channel dimension
-                if x_i.dim() == 3:  # If shape is (1, height, width)
-                    x_i = x_i.unsqueeze(1)  # Add channel dimension
+                x_i = batch_i['image'].unsqueeze(0).to(self.device)
+                if x_i.dim() == 3:
+                    x_i = x_i.unsqueeze(1)
 
                 y_i = {key: batch_i[key].unsqueeze(0).to(self.device) for key in self.output_heads}
                 for key in y_i:
-                    # Ensure target has a channel dimension
-                    if y_i[key].dim() == 3:  # If shape is (1, height, width)
-                        y_i[key] = y_i[key].unsqueeze(1)  # Add channel dimension
+                    if y_i[key].dim() == 3:
+                        y_i[key] = y_i[key].unsqueeze(1)
 
                 # Forward pass
                 y_pred = self.model(x_i)
 
-                # Apply activations
-                y_pred = {name: self._apply_activation(pred, self.activations.get(name)) for name, pred in
-                          y_pred.items()}
+                if hasattr(self.model, 'deep_supervision') and self.model.deep_supervision:
+                    # Handle deep supervision outputs
+                    for name in self.output_heads:
+                        # Log input image
+                        self.writer.add_image(f'Validation/{name}_input_{idx}', x_i[0], epoch)
 
-                for name, pred in y_pred.items():
-                    # Log input image
-                    self.writer.add_image(f'Validation/{name}_input_{idx}', x_i[0], epoch)
+                        # Log true target image
+                        self.writer.add_image(f'Validation/{name}_true_{idx}', y_i[name][0], epoch)
 
-                    # Log predicted image
-                    self.writer.add_image(f'Validation/{name}_pred_{idx}', pred[0], epoch)
+                        # Log predictions for each supervision level
+                        for level in range(1, 5):
+                            pred_key = f"{name}_{level}"
+                            pred = self._apply_activation(y_pred[pred_key], self.activations.get(name))
+                            self.writer.add_image(f'Validation/{name}_pred_level{level}_{idx}', pred[0], epoch)
+                else:
+                    # Original behavior for non-deep supervision
+                    y_pred = {name: self._apply_activation(pred, self.activations.get(name))
+                              for name, pred in y_pred.items()}
 
-                    # Log true target image
-                    self.writer.add_image(f'Validation/{name}_true_{idx}', y_i[name][0], epoch)
+                    for name, pred in y_pred.items():
+                        self.writer.add_image(f'Validation/{name}_input_{idx}', x_i[0], epoch)
+                        self.writer.add_image(f'Validation/{name}_pred_{idx}', pred[0], epoch)
+                        self.writer.add_image(f'Validation/{name}_true_{idx}', y_i[name][0], epoch)
 
                 # Plot images using matplotlib
                 self.plot_images(epoch, idx, x_i[0], y_pred, y_i, self.output_heads)
@@ -329,7 +378,7 @@ class Trainer:
                 self.state['best_loss'] = self.best_loss = val_loss
                 torch.save(self.state, os.path.join(self.save_dir, self.save_name))
 
-            self.log_validation_images(epoch=epoch, num_images=6)
+            self.log_validation_images(epoch=epoch, num_images=10)
 
             # Save model state after each epoch if required
             if self.save_iter:

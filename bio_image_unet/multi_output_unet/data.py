@@ -76,6 +76,8 @@ class DataProcess(Dataset):
             Limits of Shot noise for image augmentation
         brightness_contrast : Tuple[float, float]
             Adapt brightness and contrast of images during augmentation
+        blur_limit : Tuple[float, float]
+            Limits of blur (min, max) for image augmentation
         random_rotate : bool
             Whether to randomly rotate images during augmentation
         create : bool, optional

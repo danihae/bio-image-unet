@@ -4,7 +4,7 @@ from typing import Dict, List, Optional
 
 
 class MultiOutputUnet(nn.Module):
-    def __init__(self, in_channels=1, output_heads: Dict[str, dict] = None, n_filter=32):
+    def __init__(self, in_channels=1, output_heads: Dict[str, dict] = None, n_filter=32, **kwargs):
         """
         Multi-output U-Net architecture supporting various output heads.
 
