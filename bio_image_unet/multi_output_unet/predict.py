@@ -189,7 +189,7 @@ class Predict:
 
                 # Prepare batch patches
                 batch_patches = patches[start_idx:end_idx]
-                batch_patches = torch.from_numpy(batch_patches).to(self.device)
+                batch_patches = torch.tensor(batch_patches).to(self.device)
                 batch_patches = batch_patches.view(
                     -1, self.model_params['in_channels'], self.resize_dim[0], self.resize_dim[1]
                 )
