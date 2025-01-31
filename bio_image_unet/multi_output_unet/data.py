@@ -20,7 +20,7 @@ class DataProcess(Dataset):
     def __init__(self,
                  image_dir: str,
                  target_dirs: List[str],
-                 target_types: List[str],
+                 target_types: dict[str],
                  data_dir: str = '../data/',
                  dim_out: Tuple[int, int] = (256, 256),
                  in_channels: int = 1,
@@ -52,6 +52,8 @@ class DataProcess(Dataset):
             Directory with training images
         target_dirs : List[str]
             List of directories with targets
+        target_types : dict
+            Dictionary of target types (e.g. {'feature1': 'mask', 'feature2': 'mask'})
         dim_out : Tuple[int, int]
             Resize dimensions of images for training
         data_dir : str
@@ -257,7 +259,7 @@ class DataProcess(Dataset):
         aug_pipeline = Compose(transforms=[
             RandomBrightnessContrast(brightness_limit=self.brightness_contrast[0],
                                      contrast_limit=self.brightness_contrast[1], p=0.5),
-            Blur(blur_limit=self.blur_limit, always_apply=False, p=0.25),
+            Blur(blur_limit=self.blur_limit, p=0.25),
             ShotNoise(scale_range=self.shot_noise_lims, p=0.25),
             GaussNoise(std_range=self.gauss_noise_lims, p=0.25),
         ], p=p, additional_targets=target_types)

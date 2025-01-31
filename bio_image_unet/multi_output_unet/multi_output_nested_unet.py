@@ -1,6 +1,7 @@
+from typing import Dict
+
 import torch
 from torch import nn
-from typing import Dict, List, Optional
 
 
 class FirstVGGBlock(nn.Module):
@@ -136,8 +137,87 @@ class MultiOutputNestedUNet(nn.Module):
                                                              config.get('activation'))
                 outputs[f"{name}_4"] = self.apply_activation(self.output_layers[f"{name}_4"](x0_4),
                                                              config.get('activation'))
+                outputs[f"{name}"] = outputs[f"{name}_4"]
         else:
             for name, config in self.output_heads.items():
                 outputs[name] = self.apply_activation(self.output_layers[name](x0_4), config.get('activation'))
+
+        return outputs
+
+
+class MultiOutputNestedUNet_3Levels(nn.Module):
+    def __init__(self, in_channels=1, output_heads: Dict[str, dict] = None, n_filter=32, deep_supervision=False,
+                 **kwargs):
+        super().__init__()
+        self.output_heads = output_heads or {'default': {'channels': 1, 'activation': 'sigmoid'}}
+        self.deep_supervision = deep_supervision
+
+        # Reduced from five to four entries to remove the fourth pooling level
+        nb_filter = [n_filter, n_filter * 2, n_filter * 4, n_filter * 8]
+
+        self.pool = nn.MaxPool2d(2, 2)
+        self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+
+        self.conv0_0 = VGGBlock(in_channels, nb_filter[0], nb_filter[0])
+        self.conv1_0 = VGGBlock(nb_filter[0], nb_filter[1], nb_filter[1])
+        self.conv2_0 = VGGBlock(nb_filter[1], nb_filter[2], nb_filter[2])
+        self.conv3_0 = VGGBlock(nb_filter[2], nb_filter[3], nb_filter[3])
+
+        self.conv0_1 = VGGBlock(nb_filter[0] + nb_filter[1], nb_filter[0], nb_filter[0])
+        self.conv1_1 = VGGBlock(nb_filter[1] + nb_filter[2], nb_filter[1], nb_filter[1])
+        self.conv2_1 = VGGBlock(nb_filter[2] + nb_filter[3], nb_filter[2], nb_filter[2])
+
+        self.conv0_2 = VGGBlock(nb_filter[0] * 2 + nb_filter[1], nb_filter[0], nb_filter[0])
+        self.conv1_2 = VGGBlock(nb_filter[1] * 2 + nb_filter[2], nb_filter[1], nb_filter[1])
+
+        self.conv0_3 = VGGBlock(nb_filter[0] * 3 + nb_filter[1], nb_filter[0], nb_filter[0])
+
+        if self.deep_supervision:
+            self.output_layers = nn.ModuleDict()
+            for name, config in self.output_heads.items():
+                self.output_layers[f"{name}_1"] = nn.Conv2d(nb_filter[0], config['channels'], kernel_size=1)
+                self.output_layers[f"{name}_2"] = nn.Conv2d(nb_filter[0], config['channels'], kernel_size=1)
+                self.output_layers[f"{name}_3"] = nn.Conv2d(nb_filter[0], config['channels'], kernel_size=1)
+        else:
+            self.output_layers = nn.ModuleDict()
+            for name, config in self.output_heads.items():
+                self.output_layers[name] = nn.Conv2d(nb_filter[0], config['channels'], kernel_size=1)
+
+    def apply_activation(self, x, activation):
+        if activation == 'sigmoid':
+            return torch.sigmoid(x)
+        elif activation == 'tanh':
+            return torch.tanh(x)
+        elif activation == 'relu':
+            return torch.relu(x)
+        return x
+
+    def forward(self, x):
+        x0_0 = self.conv0_0(x)
+        x1_0 = self.conv1_0(self.pool(x0_0))
+        x0_1 = self.conv0_1(torch.cat([x0_0, self.up(x1_0)], 1))
+
+        x2_0 = self.conv2_0(self.pool(x1_0))
+        x1_1 = self.conv1_1(torch.cat([x1_0, self.up(x2_0)], 1))
+        x0_2 = self.conv0_2(torch.cat([x0_0, x0_1, self.up(x1_1)], 1))
+
+        x3_0 = self.conv3_0(self.pool(x2_0))
+        x2_1 = self.conv2_1(torch.cat([x2_0, self.up(x3_0)], 1))
+        x1_2 = self.conv1_2(torch.cat([x1_0, x1_1, self.up(x2_1)], 1))
+        x0_3 = self.conv0_3(torch.cat([x0_0, x0_1, x0_2, self.up(x1_2)], 1))
+
+        outputs = {}
+        if self.deep_supervision:
+            for name, config in self.output_heads.items():
+                outputs[f"{name}_1"] = self.apply_activation(self.output_layers[f"{name}_1"](x0_1),
+                                                             config.get('activation'))
+                outputs[f"{name}_2"] = self.apply_activation(self.output_layers[f"{name}_2"](x0_2),
+                                                             config.get('activation'))
+                outputs[f"{name}_3"] = self.apply_activation(self.output_layers[f"{name}_3"](x0_3),
+                                                             config.get('activation'))
+                outputs[f"{name}"] = outputs[f"{name}_3"]
+        else:
+            for name, config in self.output_heads.items():
+                outputs[name] = self.apply_activation(self.output_layers[name](x0_3), config.get('activation'))
 
         return outputs

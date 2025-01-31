@@ -15,10 +15,10 @@ from ..utils import init_weights, get_device
 
 
 class Trainer:
-    def __init__(self, dataset: DataProcess, num_epochs: int, network=MultiOutputNestedUNet, batch_size: int = 4,
-                 lr: float = 1e-4, in_channels: int = 1, output_heads: Union[None, dict] = None, n_filter: int = 64,
-                 deep_supervision: bool = False, val_split: float = 0.2, save_dir: str = './',
-                 save_name: str = 'model.pth', save_iter: bool = False, load_weights: bool = False,
+    def __init__(self, dataset: DataProcess, num_epochs: int, network=MultiOutputNestedUNet, levels: int = 4,
+                 batch_size: int = 4, lr: float = 1e-4, in_channels: int = 1, output_heads: Union[None, dict] = None,
+                 n_filter: int = 64, deep_supervision: bool = False, val_split: float = 0.2, save_dir: str = './',
+                 save_name: str = 'model.pt', save_iter: bool = False, load_weights: bool = False,
                  device: Union[torch.device, str] = 'auto'):
         if device == 'auto':
             self.device = get_device()
@@ -31,6 +31,7 @@ class Trainer:
         self.data = dataset
         self.num_epochs = num_epochs
         self.batch_size = batch_size
+        self.levels = levels
         self.lr = lr
         self.best_loss = torch.tensor(float('inf'))
         self.save_iter = save_iter
@@ -90,6 +91,9 @@ class Trainer:
         if load_weights:
             self.state = torch.load(os.path.join(self.save_dir, self.save_name))
             self.model.load_state_dict(self.state['state_dict'])
+            self.epoch_start = self.state['epoch']
+        else:
+            self.epoch_start = 0
 
         # Initialize tensorboard
         self.writer = SummaryWriter(log_dir=os.path.join(self.save_dir, 'logs'))
@@ -157,7 +161,13 @@ class Trainer:
 
                     if self.model.deep_supervision:
                         # Calculate loss for each deep supervision output
-                        supervision_weights = [0.5, 0.75, 0.875, 1.0]  # Weights for different supervision levels
+                        if self.levels == 3:
+                            supervision_weights = [0.5, 0.75, 1.0]  # Weights for different supervision levels
+                        elif self.levels == 4:
+                            supervision_weights = [0.5, 0.75, 0.875, 1.0]
+                        else:
+                            raise ValueError(f'N = {self.levels} levels not valid. '
+                                             f'Choose N=3 or N=4 according to network architecture.')
                         for level, weight in enumerate(supervision_weights, 1):
                             pred_key = f"{name}_{level}"
                             pred = y_pred[pred_key]
@@ -177,7 +187,7 @@ class Trainer:
                 running_loss += total_loss.item()
 
             avg_train_loss = running_loss / len(self.train_loader)
-            self.writer.add_scalar('Loss/train', avg_train_loss, epoch)
+            self.writer.add_scalar('Loss/train', avg_train_loss, epoch + self.epoch_start)
 
         elif mode == 'val':
             loss_list = []
@@ -200,7 +210,7 @@ class Trainer:
                             target = target.unsqueeze(1)
 
                         if hasattr(self.model, 'deep_supervision') and self.model.deep_supervision:
-                            supervision_weights = [0.5, 0.75, 0.875, 1.0]
+                            supervision_weights = [0.5, 0.75, 1.0]
                             for level, weight in enumerate(supervision_weights, 1):
                                 pred_key = f"{name}_{level}"
                                 pred = self._apply_activation(y_pred[pred_key], self.activations.get(name))
@@ -214,7 +224,7 @@ class Trainer:
                     loss_list.append(total_loss.detach())
 
             val_loss = torch.stack(loss_list).mean()
-            self.writer.add_scalar('Loss/val', val_loss.item(), epoch)
+            self.writer.add_scalar('Loss/val', val_loss.item(), epoch + self.epoch_start)
             return val_loss
 
         torch.cuda.empty_cache()
@@ -224,7 +234,7 @@ class Trainer:
 
         if hasattr(self.model, 'deep_supervision') and self.model.deep_supervision:
             num_heads = len(output_heads)
-            num_levels = 4  # Number of deep supervision levels
+            num_levels = self.levels  # Number of deep supervision levels
             fig, axes = plt.subplots(2 + num_levels, num_heads + 1, figsize=(12, 12), dpi=300)
 
             # Plot input image
@@ -238,7 +248,7 @@ class Trainer:
                 cmap = 'viridis' if name in ['length', 'orientation'] else 'gray'
 
                 # Plot final prediction
-                final_pred = y_pred[f"{name}_4"].cpu().numpy().squeeze()
+                final_pred = y_pred[f"{name}"].cpu().numpy().squeeze()
                 if len(final_pred.shape) == 3:
                     final_pred = final_pred[0]
                 axes[0, i + 1].imshow(final_pred, cmap=cmap)
@@ -256,7 +266,7 @@ class Trainer:
                 axes[1, i + 1].set_yticks([])
 
                 # Plot intermediate supervision outputs
-                for level in range(1, 5):
+                for level in range(1, num_levels + 1):
                     pred_key = f"{name}_{level}"
                     pred = y_pred[pred_key].cpu().numpy().squeeze()
                     if len(pred.shape) == 3:
@@ -300,9 +310,9 @@ class Trainer:
                 axes[1, i + 1].set_xticks([])
                 axes[1, i + 1].set_yticks([])
 
-        plt.suptitle(f'Epoch {epoch}, Sample {idx}')
+        plt.suptitle(f'Epoch {epoch + self.epoch_start}, Sample {idx}')
         plt.tight_layout()
-        plt.savefig(self.save_dir_val_result + f'Epoch {epoch}, Sample {idx}.png')
+        plt.savefig(self.save_dir_val_result + f'Epoch {epoch + self.epoch_start}, Sample {idx}.png')
         plt.close()
 
     def log_validation_images(self, epoch, num_images):
@@ -336,19 +346,20 @@ class Trainer:
                         self.writer.add_image(f'Validation/{name}_true_{idx}', y_i[name][0], epoch)
 
                         # Log predictions for each supervision level
-                        for level in range(1, 5):
+                        for level in range(1, self.levels + 1):
                             pred_key = f"{name}_{level}"
                             pred = self._apply_activation(y_pred[pred_key], self.activations.get(name))
-                            self.writer.add_image(f'Validation/{name}_pred_level{level}_{idx}', pred[0], epoch)
+                            self.writer.add_image(f'Validation/{name}_pred_level{level}_{idx}', pred[0],
+                                                  epoch + self.epoch_start)
                 else:
                     # Original behavior for non-deep supervision
                     y_pred = {name: self._apply_activation(pred, self.activations.get(name))
                               for name, pred in y_pred.items()}
 
                     for name, pred in y_pred.items():
-                        self.writer.add_image(f'Validation/{name}_input_{idx}', x_i[0], epoch)
-                        self.writer.add_image(f'Validation/{name}_pred_{idx}', pred[0], epoch)
-                        self.writer.add_image(f'Validation/{name}_true_{idx}', y_i[name][0], epoch)
+                        self.writer.add_image(f'Validation/{name}_input_{idx}', x_i[0], epoch + self.epoch_start)
+                        self.writer.add_image(f'Validation/{name}_pred_{idx}', pred[0], epoch + self.epoch_start)
+                        self.writer.add_image(f'Validation/{name}_true_{idx}', y_i[name][0], epoch + self.epoch_start)
 
                 # Plot images using matplotlib
                 self.plot_images(epoch, idx, x_i[0], y_pred, y_i, self.output_heads)
@@ -360,7 +371,8 @@ class Trainer:
 
             # Update state dictionary
             self.state = {
-                'epoch': epoch,
+                'epoch': epoch + self.epoch_start,
+                'epoch_start': self.epoch_start,
                 'best_loss': self.best_loss,
                 'state_dict': self.model.state_dict()
             }
@@ -382,4 +394,4 @@ class Trainer:
 
             # Save model state after each epoch if required
             if self.save_iter:
-                torch.save(self.state, os.path.join(self.save_dir, f'model_epoch_{epoch}.pth'))
+                torch.save(self.state, os.path.join(self.save_dir, f'model_epoch_{epoch + self.epoch_start}.pt'))

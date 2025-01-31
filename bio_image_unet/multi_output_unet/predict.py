@@ -6,15 +6,15 @@ import tifffile
 import torch
 
 from ..progress import ProgressNotifier
-from .multi_output_unet import MultiOutputUnet
+from .multi_output_nested_unet import MultiOutputNestedUNet, MultiOutputNestedUNet_3Levels
 from ..utils import get_device
 
 
 class Predict:
     """Class for prediction of movies and images using a U-Net model."""
 
-    def __init__(self, imgs, model_params, result_path=None, network=MultiOutputUnet, resize_dim=(512, 512),
-                 batch_size=1, normalization_mode='single', clip_threshold=(0., 99.8), add_tile=0,
+    def __init__(self, imgs, model_params, result_path=None, network=MultiOutputNestedUNet, resize_dim=(1024, 1024),
+                 batch_size=1, normalization_mode='single', clip_threshold=(0., 99.98), add_tile=0,
                  show_progress=True, device: Union[torch.device, str] = 'auto',
                  progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
         """
@@ -31,7 +31,7 @@ class Predict:
         imgs : ndarray or str
             Images to predict. If a string is provided, it attempts to load images from a TIFF file.
         model_params : str
-            Path to the U-Net model parameters (.pth file).
+            Path to the U-Net model parameters (.pt file).
         result_path : str, optional
             Path to save the prediction results as a TIFF file. If None, results are stored in the 'result' attribute.
         network : Network, optional
@@ -73,6 +73,7 @@ class Predict:
         self.show_progress = show_progress
 
         # read, preprocess and split data
+        imgs = imgs.astype('float32')
         imgs = self.__reshape_data(imgs)
         imgs = self.__preprocess(imgs)
         patches = self.__split(imgs)
@@ -82,7 +83,8 @@ class Predict:
         self.model_params = torch.load(model_params, map_location=self.device)
         self.model = network(in_channels=self.model_params['in_channels'],
                              n_filter=self.model_params['n_filter'],
-                             output_heads=self.model_params['output_heads']).to(self.device)
+                             output_heads=self.model_params['output_heads'],
+                             deep_supervision=self.model_params.get('deep_supervision', False)).to(self.device)
         self.model.load_state_dict(self.model_params['state_dict'])
         self.model.eval()
         self.target_keys = self.model_params['output_heads'].keys()
@@ -120,61 +122,59 @@ class Predict:
                 img = np.clip(img, a_min=np.nanpercentile(img, self.clip_threshold[0]),
                               a_max=np.percentile(img, self.clip_threshold[1]))
                 img = img - np.min(img)
-                img = img / np.max(img) * 255
+                img = img / np.max(img)
                 imgs[i] = img
         elif self.normalization_mode == 'first':
             clip_threshold = (np.nanpercentile(imgs[0], self.clip_threshold[0]),
                               np.percentile(imgs[0], self.clip_threshold[1]))
             imgs = np.clip(imgs, clip_threshold[0], clip_threshold[1])
             imgs = imgs - np.min(imgs)
-            imgs = imgs / np.max(imgs) * 255
+            imgs = imgs / np.max(imgs)
         elif self.normalization_mode == 'all':
             clip_threshold = (np.nanpercentile(imgs, self.clip_threshold[0]),
                               np.percentile(imgs, self.clip_threshold[1]))
             imgs = np.clip(imgs, clip_threshold[0], clip_threshold[1])
             imgs = imgs - np.min(imgs)
-            imgs = imgs / np.max(imgs) * 255
+            imgs = imgs / np.max(imgs)
         else:
             raise ValueError(f'normalization_mode {self.normalization_mode} not valid!')
         return imgs
 
     def __split(self, imgs):
-        # number of patches in x and y
+        # Calculate number of patches
         self.N_x = int(np.ceil(self.imgs_shape[1] / self.resize_dim[0])) + self.add_tile
         self.N_y = int(np.ceil(self.imgs_shape[2] / self.resize_dim[1])) + self.add_tile
         self.N_per_img = self.N_x * self.N_y
-        self.N = self.N_x * self.N_y * self.imgs_shape[0]  # total number of patches
+        self.N = self.N_per_img * self.imgs_shape[0]
 
-        # define array for prediction
-        patches = np.zeros((self.N, 1, self.resize_dim[0], self.resize_dim[1]), dtype='uint8')
+        # Pad images if needed
+        pad_x = max(self.resize_dim[0] - self.imgs_shape[1], 0)
+        pad_y = max(self.resize_dim[1] - self.imgs_shape[2], 0)
+        imgs = np.pad(imgs, ((0, 0), (0, pad_x), (0, pad_y)), 'reflect')
 
-        # zero padding of image if imgs_shape < resize_dim
-        if self.resize_dim[0] > self.imgs_shape[1]:  # for x
-            imgs = np.pad(imgs, ((0, 0), (0, self.resize_dim[0] - self.imgs_shape[1]), (0, 0)),
-                          'reflect')
-        if self.resize_dim[1] > self.imgs_shape[2]:  # for y
-            imgs = np.pad(imgs, ((0, 0), (0, 0), (0, self.resize_dim[1] - self.imgs_shape[2])),
-                          'reflect')
+        # Calculate starting indices (preserved for stitching)
+        self.X_start = np.linspace(0, imgs.shape[1] - self.resize_dim[0], self.N_x).astype('uint16')
+        self.Y_start = np.linspace(0, imgs.shape[2] - self.resize_dim[1], self.N_y).astype('uint16')
 
-        # starting indices of patches
-        self.X_start = np.linspace(0, self.imgs_shape[1] - self.resize_dim[0], self.N_x).astype('uint16')
-        self.Y_start = np.linspace(0, self.imgs_shape[2] - self.resize_dim[1], self.N_y).astype('uint16')
+        # Generate patches using vectorized operations
+        window_shape = (self.resize_dim[0], self.resize_dim[1])
+        patches = np.lib.stride_tricks.sliding_window_view(imgs, window_shape, axis=(1, 2))
+        patches = patches[:, ::self.X_start[1] if self.N_x > 1 else 1,
+                  ::self.Y_start[1] if self.N_y > 1 else 1]
+        patches = patches.reshape(-1, *window_shape)
 
-        # split in resize_dim
-        n = 0
-        for i, img in enumerate(imgs):
-            for j in range(self.N_x):
-                for k in range(self.N_y):
-                    patches[n, 0, :, :] = img[self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-                                          self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]]
-                    n += 1
         return patches
 
     def __predict(self, patches, batch_size=16, progress_notifier=None):
-        result_patches = {target_key: np.zeros((patches.shape[0],
-                                                self.model_params['output_heads'][target_key]['channels'],
-                                                *patches.shape[2:]),
-                                               dtype='float32') for target_key in self.target_keys}
+        # Initialize result_patches with correct dimensions
+        result_patches = {
+            target_key: np.zeros(
+                (patches.shape[0], self.model_params['output_heads'][target_key]['channels'], *self.resize_dim),
+                dtype='float32'
+            )
+            for target_key in self.target_keys
+        }
+
         print('Predicting data ...') if self.show_progress else None
 
         with torch.no_grad():
@@ -186,19 +186,31 @@ class Predict:
             for batch_idx in _progress_notifier:
                 start_idx = batch_idx * batch_size
                 end_idx = min(start_idx + batch_size, patches.shape[0])
-                batch_patches = patches[start_idx:end_idx].astype('float32') / 255
+
+                # Prepare batch patches
+                batch_patches = patches[start_idx:end_idx]
                 batch_patches = torch.from_numpy(batch_patches).to(self.device)
                 batch_patches = batch_patches.view(
-                    (-1, self.model_params['in_channels'], self.resize_dim[0], self.resize_dim[1]))
+                    -1, self.model_params['in_channels'], self.resize_dim[0], self.resize_dim[1]
+                )
 
+                # Get model predictions
                 batch_results = self.model(batch_patches)
 
+                # Assign predictions to result_patches
                 for target_key in self.target_keys:
+                    # Extract model output for this target key
                     batch_results_target = batch_results[target_key].cpu().numpy()
-                    for i in range(batch_results_target.shape[0]):
-                        result_patches[target_key][start_idx + i] = batch_results_target[i]
 
-                del batch_patches, batch_results
+                    # Ensure shapes match before assignment
+                    expected_shape = result_patches[target_key][start_idx:end_idx].shape
+                    if batch_results_target.shape != expected_shape:
+                        raise RuntimeError(
+                            f"Shape mismatch for target key '{target_key}': "
+                            f"predicted {batch_results_target.shape}, expected {expected_shape}"
+                        )
+
+                    result_patches[target_key][start_idx:end_idx] = batch_results_target
 
         return result_patches
 
@@ -209,31 +221,31 @@ class Predict:
             result_patches_target = result_patches[target_key]
             result_target = np.zeros(
                 shape=(self.imgs_shape[0], self.model_params['output_heads'][target_key]['channels'],
-                       np.max((self.resize_dim[0], self.imgs_shape[1])),
-                       np.max((self.resize_dim[1], self.imgs_shape[2]))), dtype='float32')
+                       max(self.resize_dim[0], self.imgs_shape[1]),
+                       max(self.resize_dim[1], self.imgs_shape[2])),
+                dtype='float32'
+            )
+            weight = np.zeros_like(result_target)
 
             for i in range(self.imgs_shape[0]):
-                stack_result_i = np.zeros((self.N_per_img,
-                                           self.model_params['output_heads'][target_key]['channels'],
-                                           np.max((self.resize_dim[0], self.imgs_shape[1])),
-                                           np.max((self.resize_dim[1], self.imgs_shape[2]))), dtype='float32') * np.nan
+                stack_result_i = result_patches_target[
+                                 i * self.N_per_img:(i + 1) * self.N_per_img
+                                 ].reshape(self.N_x, self.N_y, *result_patches_target.shape[1:])
 
-                n = 0
-                for j in range(self.N_x):
-                    for k in range(self.N_y):
-                        stack_result_i[n, :, self.X_start[j]:self.X_start[j] + self.resize_dim[0],
-                        self.Y_start[k]:self.Y_start[k] + self.resize_dim[1]] = result_patches_target[
-                            i * self.N_per_img + n]
-                        n += 1
+                for j, x_start in enumerate(self.X_start):
+                    for k, y_start in enumerate(self.Y_start):
+                        x_slice = slice(x_start, x_start + self.resize_dim[0])
+                        y_slice = slice(y_start, y_start + self.resize_dim[1])
 
-                # average overlapping regions
-                result_target[i] = np.nanmean(stack_result_i, axis=0)
-                del stack_result_i
+                        # Add patch to result and update weight matrix
+                        result_target[i, :, x_slice, y_slice] += stack_result_i[j, k]
+                        weight[i, :, x_slice, y_slice] += 1
 
-            # change to input size (if zero padding) and remove unnecessary dimensions
+            # Normalize overlapping regions
+            np.divide(result_target, weight, out=result_target, where=weight > 0)
+
+            # Crop to original image size and remove unnecessary dimensions
             result_target = result_target[:, :, :self.imgs_shape[1], :self.imgs_shape[2]]
-            result_target = np.squeeze(result_target)
-
-            result[target_key] = result_target
+            result[target_key] = np.squeeze(result_target)
 
         return result
