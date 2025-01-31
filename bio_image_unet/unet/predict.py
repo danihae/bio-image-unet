@@ -27,7 +27,7 @@ class Predict:
     result_name : str
         path for result
     model_params : str
-        path of u-net parameters (.pth file)
+        path of u-net parameters (.pt file)
     network
         Network class
     resize_dim

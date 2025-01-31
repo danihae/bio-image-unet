@@ -56,7 +56,7 @@ class Trainer:
         Device to run the pytorch model on, defaults to 'auto', which selects CUDA or MPS if available.
     """
     def __init__(self, dataset, num_epochs, network=Unet, batch_size=4, lr=1e-3, in_channels=1, out_channels=1,
-                 channel_weights=None, n_filter=64, dilation=1, val_split=0.2, save_dir='./', save_name='model.pth',
+                 channel_weights=None, n_filter=64, dilation=1, val_split=0.2, save_dir='./', save_name='model.pt',
                  save_iter=False, load_weights=False, loss_function='BCEDice', loss_params=(0.5, 0.5),
                  device: Union[torch.device, str] = 'auto'):
 
@@ -185,7 +185,7 @@ class Trainer:
                 self.state['best_loss'] = self.best_loss = val_loss
                 torch.save(self.state, self.save_dir + '/' + self.save_name)
             if self.save_iter:
-                torch.save(self.state, self.save_dir + '/' + f'model_epoch_{epoch}.pth')
+                torch.save(self.state, self.save_dir + '/' + f'model_epoch_{epoch}.pt')
 
             if test_data_path is not None:
                 print('\nPredicting test data...')
@@ -193,6 +193,6 @@ class Trainer:
                 for i, file in enumerate(files):
                     img = tifffile.imread(file)
                     Predict(img, result_path + os.path.basename(file) + f'epoch_{epoch}.tif',
-                            self.save_dir + '/' + f'model_epoch_{epoch}.pth', self.network, resize_dim=test_resize_dim,
+                            self.save_dir + '/' + f'model_epoch_{epoch}.pt', self.network, resize_dim=test_resize_dim,
                             invert=False, show_progress=False)
 

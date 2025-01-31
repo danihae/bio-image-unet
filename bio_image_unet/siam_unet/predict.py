@@ -29,7 +29,7 @@ class Predict:
     result_name : str
         Path of result file
     model_params : str
-        path of u-net parameters (.pth file)
+        path of u-net parameters (.pt file)
     resize_dim
         Image dimensions for resizing for prediction. If resize_dim=None, the image will not be resized but
         the whole image will be processed by the convolution layers.

@@ -50,7 +50,7 @@ class Trainer:
         Device to run the pytorch model on, defaults to 'auto', which selects CUDA or MPS if available.
     """
     def __init__(self, dataset, num_epochs, batch_size=4, lr=1e-3, n_filter=32, mode='max', val_split=0.2,
-                 save_dir='./', save_name='model.pth', save_iter=False, loss_function='BCEDice',
+                 save_dir='./', save_name='model.pt', save_iter=False, loss_function='BCEDice',
                  loss_params=(1, 1), load_weights=None, device: Union[torch.device, str] = 'auto'):
 
         if device == 'auto':
@@ -161,12 +161,12 @@ class Trainer:
             else:
                 print(f'\nEpoch {epoch}: Validation loss did not improve from {round(self.best_loss.item(), 5)}')
             if self.save_iter:
-                torch.save(self.state, self.save_dir + '/' + f'model_epoch_{epoch}.pth')
+                torch.save(self.state, self.save_dir + '/' + f'model_epoch_{epoch}.pt')
 
             if test_data_path is not None:
                 os.makedirs(result_path, exist_ok=True)
                 files = glob.glob(test_data_path + '*.tif')
                 for i, file in enumerate(files):
                     Predict(file, result_path + os.path.basename(file) + f'epoch_{epoch}.tif',
-                            self.save_dir + '/' + f'model_epoch_{epoch}.pth', resize_dim=test_resize_dim,
+                            self.save_dir + '/' + f'model_epoch_{epoch}.pt', resize_dim=test_resize_dim,
                             invert=False, show_progress=False)

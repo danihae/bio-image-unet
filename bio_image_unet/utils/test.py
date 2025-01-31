@@ -42,7 +42,7 @@ def test_unet():
 
     # predict movie
     unet.Predict(folder + 'movie.tif', result_name=folder_results + 'movie.tif',
-                 model_params=folder + 'models_unet/model.pth', resize_dim=(64, 64),
+                 model_params=folder + 'models_unet/model.pt', resize_dim=(64, 64),
                  progress_notifier=ProgressNotifier())
 
 
@@ -77,7 +77,7 @@ def test_siam_unet():
 
     # predict movie
     siam.Predict(folder + 'movie.tif', result_name=folder_results + 'movie.tif',
-                 model_params=folder + 'models_siam/model.pth', resize_dim=(64, 64),
+                 model_params=folder + 'models_siam/model.pt', resize_dim=(64, 64),
                  progress_notifier=ProgressNotifier())
 
 def test_unet3d():
@@ -107,7 +107,7 @@ def test_unet3d():
 
     # predict movie
     unet3d.Predict(folder + 'movie.tif', result_name=folder_results + 'movie.tif',
-                 model_params=folder + 'models_unet3d/model.pth', resize_dim=(16, 64, 64),
+                 model_params=folder + 'models_unet3d/model.pt', resize_dim=(16, 64, 64),
                  progress_notifier=ProgressNotifier())
 
 

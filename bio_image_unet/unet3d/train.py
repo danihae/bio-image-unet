@@ -58,7 +58,7 @@ class Trainer:
     """
     def __init__(self, dataset, num_epochs, network=UNet3D, use_interpolation=False, batch_size=4, lr=1e-3,
                  in_channels=1, out_channels=1, channel_weights=None, n_filter=64, dilation=1, val_split=0.2,
-                 save_dir='./', save_name='model.pth', save_iter=False, load_weights=False, loss_function='BCEDice',
+                 save_dir='./', save_name='model.pt', save_iter=False, load_weights=False, loss_function='BCEDice',
                  loss_params=(0.5, 0.5), time_loss_weight=0.1, device: Union[torch.device, str] = 'auto'):
 
         if device == 'auto':
@@ -206,12 +206,12 @@ class Trainer:
                 self.state['best_loss'] = self.best_loss = val_loss
                 torch.save(self.state, self.save_dir + '/' + self.save_name)
             if self.save_iter:
-                torch.save(self.state, self.save_dir + '/' + f'model_epoch_{epoch}.pth')
+                torch.save(self.state, self.save_dir + '/' + f'model_epoch_{epoch}.pt')
 
             if test_data_path is not None:
                 print('\nPredicting test data...')
                 files = glob.glob(test_data_path + '*.tif')
                 for i, file in enumerate(files):
                     Predict(file, result_path + os.path.basename(file) + f'epoch_{epoch}.tif',
-                            self.save_dir + '/' + f'model_epoch_{epoch}.pth',
+                            self.save_dir + '/' + f'model_epoch_{epoch}.pt',
                             resize_dim=test_resize_dim, progress_bar=False)
