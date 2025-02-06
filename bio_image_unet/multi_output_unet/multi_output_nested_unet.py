@@ -55,10 +55,12 @@ class VGGBlock(nn.Module):
 
 
 class MultiOutputNestedUNet(nn.Module):
-    def __init__(self, in_channels=1, output_heads: Dict[str, dict] = None, n_filter=32, deep_supervision=False):
+    def __init__(self, in_channels=1, output_heads: Dict[str, dict] = None, n_filter=32, deep_supervision=False,
+                 train_mode=True):
         super().__init__()
         self.output_heads = output_heads or {'default': {'channels': 1, 'activation': 'sigmoid'}}
         self.deep_supervision = deep_supervision
+        self.train_mode = train_mode
 
         nb_filter = [n_filter, n_filter * 2, n_filter * 4, n_filter * 8, n_filter * 16]
 
@@ -129,15 +131,19 @@ class MultiOutputNestedUNet(nn.Module):
         outputs = {}
         if self.deep_supervision:
             for name, config in self.output_heads.items():
-                outputs[f"{name}_1"] = self.apply_activation(self.output_layers[f"{name}_1"](x0_1),
-                                                             config.get('activation'))
-                outputs[f"{name}_2"] = self.apply_activation(self.output_layers[f"{name}_2"](x0_2),
-                                                             config.get('activation'))
-                outputs[f"{name}_3"] = self.apply_activation(self.output_layers[f"{name}_3"](x0_3),
-                                                             config.get('activation'))
-                outputs[f"{name}_4"] = self.apply_activation(self.output_layers[f"{name}_4"](x0_4),
-                                                             config.get('activation'))
-                outputs[f"{name}"] = outputs[f"{name}_4"]
+                if self.train_mode:
+                    outputs[f"{name}_1"] = self.apply_activation(self.output_layers[f"{name}_1"](x0_1),
+                                                                 config.get('activation'))
+                    outputs[f"{name}_2"] = self.apply_activation(self.output_layers[f"{name}_2"](x0_2),
+                                                                 config.get('activation'))
+                    outputs[f"{name}_3"] = self.apply_activation(self.output_layers[f"{name}_3"](x0_3),
+                                                                 config.get('activation'))
+                    outputs[f"{name}_4"] = self.apply_activation(self.output_layers[f"{name}_4"](x0_4),
+                                                                 config.get('activation'))
+                    outputs[name] = outputs[f"{name}_4"]
+                else:
+                    outputs[name] = self.apply_activation(self.output_layers[f"{name}_4"](x0_4),
+                                                          config.get('activation'))
         else:
             for name, config in self.output_heads.items():
                 outputs[name] = self.apply_activation(self.output_layers[name](x0_4), config.get('activation'))
@@ -147,10 +153,11 @@ class MultiOutputNestedUNet(nn.Module):
 
 class MultiOutputNestedUNet_3Levels(nn.Module):
     def __init__(self, in_channels=1, output_heads: Dict[str, dict] = None, n_filter=32, deep_supervision=False,
-                 **kwargs):
+                 train_mode=True, **kwargs):
         super().__init__()
         self.output_heads = output_heads or {'default': {'channels': 1, 'activation': 'sigmoid'}}
         self.deep_supervision = deep_supervision
+        self.train_mode = train_mode
 
         # Reduced from five to four entries to remove the fourth pooling level
         nb_filter = [n_filter, n_filter * 2, n_filter * 4, n_filter * 8]
@@ -209,13 +216,17 @@ class MultiOutputNestedUNet_3Levels(nn.Module):
         outputs = {}
         if self.deep_supervision:
             for name, config in self.output_heads.items():
-                outputs[f"{name}_1"] = self.apply_activation(self.output_layers[f"{name}_1"](x0_1),
-                                                             config.get('activation'))
-                outputs[f"{name}_2"] = self.apply_activation(self.output_layers[f"{name}_2"](x0_2),
-                                                             config.get('activation'))
-                outputs[f"{name}_3"] = self.apply_activation(self.output_layers[f"{name}_3"](x0_3),
-                                                             config.get('activation'))
-                outputs[f"{name}"] = outputs[f"{name}_3"]
+                if self.train_mode:
+                    outputs[f"{name}_1"] = self.apply_activation(self.output_layers[f"{name}_1"](x0_1),
+                                                                 config.get('activation'))
+                    outputs[f"{name}_2"] = self.apply_activation(self.output_layers[f"{name}_2"](x0_2),
+                                                                 config.get('activation'))
+                    outputs[f"{name}_3"] = self.apply_activation(self.output_layers[f"{name}_3"](x0_3),
+                                                                 config.get('activation'))
+                    outputs[name] = outputs[f"{name}_3"]
+                else:
+                    outputs[name] = self.apply_activation(self.output_layers[f"{name}_3"](x0_3),
+                                                          config.get('activation'))
         else:
             for name, config in self.output_heads.items():
                 outputs[name] = self.apply_activation(self.output_layers[name](x0_3), config.get('activation'))

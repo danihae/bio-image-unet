@@ -20,7 +20,7 @@ class DataProcess(Dataset):
     def __init__(self,
                  image_dir: str,
                  target_dirs: List[str],
-                 target_types: dict[str],
+                 target_types: dict[str, str],
                  data_dir: str = '../data/',
                  dim_out: Tuple[int, int] = (256, 256),
                  in_channels: int = 1,

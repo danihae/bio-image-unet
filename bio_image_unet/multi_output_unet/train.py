@@ -1,5 +1,6 @@
 import os
 import random
+import time
 from typing import Union
 
 import torch.optim as optim
@@ -366,6 +367,8 @@ class Trainer:
 
     def start(self):
         for epoch in range(self.num_epochs):
+            start_time = time.time()  # Start time of epoch
+
             # Training phase
             self.__iterate(epoch, 'train')
 
@@ -382,6 +385,12 @@ class Trainer:
             with torch.no_grad():
                 val_loss = self.__iterate(epoch, 'val')
                 self.scheduler.step(val_loss)
+
+            # Calculate time taken for epoch
+            end_time = time.time()
+            time_taken = round(end_time - start_time, 2)
+
+            print(f"\nEpoch {epoch} completed in {time_taken} seconds.")
 
             # Check for improvement in validation loss
             if val_loss < self.best_loss:

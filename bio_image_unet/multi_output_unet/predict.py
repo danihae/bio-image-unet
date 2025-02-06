@@ -84,8 +84,10 @@ class Predict:
         self.model = network(in_channels=self.model_params['in_channels'],
                              n_filter=self.model_params['n_filter'],
                              output_heads=self.model_params['output_heads'],
-                             deep_supervision=self.model_params.get('deep_supervision', False)).to(self.device)
+                             deep_supervision=self.model_params.get('deep_supervision', False),
+                             train_mode=False).to(self.device)
         self.model.load_state_dict(self.model_params['state_dict'])
+        self.model.to(torch.float16)
         self.model.eval()
         self.target_keys = self.model_params['output_heads'].keys()
         result_patches = self.__predict(patches, self.batch_size, progress_notifier)
@@ -99,9 +101,12 @@ class Predict:
             # save as .tif files
             for target_key in self.target_keys:
                 if os.path.isdir(self.result_path):
-                    tifffile.imwrite(self.result_path + target_key + '.tif', result[target_key])
+                    tifffile.imwrite(self.result_path + target_key + '.tif', result[target_key], compression='deflate',
+                                     compressionargs={'level': 6, 'predictor': 3})
                 else:
-                    tifffile.imwrite(self.result_path + '_' + target_key + '.tif', result[target_key])
+                    tifffile.imwrite(self.result_path + '_' + target_key + '.tif', result[target_key],
+                                     compression='deflate',
+                                     compressionargs={'level': 6, 'predictor': 3})
             del result
             self.result = None
         else:
@@ -165,56 +170,56 @@ class Predict:
 
         return patches
 
-    def __predict(self, patches, batch_size=16, progress_notifier=None):
-        # Initialize result_patches with correct dimensions
-        result_patches = {
-            target_key: np.zeros(
-                (patches.shape[0], self.model_params['output_heads'][target_key]['channels'], *self.resize_dim),
-                dtype='float32'
-            )
-            for target_key in self.target_keys
-        }
-
-        print('Predicting data ...') if self.show_progress else None
-
-        with torch.no_grad():
-            num_batches = int(np.ceil(patches.shape[0] / batch_size))
-            _progress_notifier = range(num_batches)
-            if self.show_progress and progress_notifier:
-                _progress_notifier = progress_notifier.iterator(_progress_notifier)
-
-            for batch_idx in _progress_notifier:
-                start_idx = batch_idx * batch_size
-                end_idx = min(start_idx + batch_size, patches.shape[0])
-
-                # Prepare batch patches
-                batch_patches = patches[start_idx:end_idx]
-                batch_patches = torch.tensor(batch_patches).to(self.device)
-                batch_patches = batch_patches.view(
-                    -1, self.model_params['in_channels'], self.resize_dim[0], self.resize_dim[1]
+    def __predict(self, patches, batch_size=1, progress_notifier=None):
+        with torch.autocast(device_type='cuda', dtype=torch.float16), torch.no_grad():
+            # Initialize result_patches with correct dimensions
+            result_patches = {
+                target_key: np.zeros(
+                    (patches.shape[0], self.model_params['output_heads'][target_key]['channels'], *self.resize_dim),
+                    dtype='float32'
                 )
+                for target_key in self.target_keys
+            }
 
-                # Get model predictions
-                batch_results = self.model(batch_patches)
+            with torch.no_grad():
+                num_batches = int(np.ceil(patches.shape[0] / batch_size))
+                _progress_notifier = range(num_batches)
+                if self.show_progress and progress_notifier:
+                    _progress_notifier = progress_notifier.iterator(_progress_notifier)
 
-                # Assign predictions to result_patches
-                for target_key in self.target_keys:
-                    # Extract model output for this target key
-                    batch_results_target = batch_results[target_key].cpu().numpy()
+                for batch_idx in _progress_notifier:
+                    start_idx = batch_idx * batch_size
+                    end_idx = min(start_idx + batch_size, patches.shape[0])
 
-                    # Ensure shapes match before assignment
-                    expected_shape = result_patches[target_key][start_idx:end_idx].shape
-                    if batch_results_target.shape != expected_shape:
-                        raise RuntimeError(
-                            f"Shape mismatch for target key '{target_key}': "
-                            f"predicted {batch_results_target.shape}, expected {expected_shape}"
-                        )
+                    # Prepare batch patches
+                    batch_patches = torch.tensor(patches[start_idx:end_idx], dtype=torch.float16).to(self.device)
+                    batch_patches = batch_patches.view(
+                        -1, self.model_params['in_channels'], self.resize_dim[0], self.resize_dim[1]
+                    )
 
-                    result_patches[target_key][start_idx:end_idx] = batch_results_target
+                    # Get model predictions
+                    batch_results = self.model(batch_patches)
 
-        return result_patches
+                    # Assign predictions to result_patches
+                    for target_key in self.target_keys:
+                        # Extract model output for this target key
+                        batch_results_target = batch_results[target_key].cpu().numpy()
 
-    def __stitch(self, result_patches):
+                        # Ensure shapes match before assignment
+                        expected_shape = result_patches[target_key][start_idx:end_idx].shape
+                        if batch_results_target.shape != expected_shape:
+                            raise RuntimeError(
+                                f"Shape mismatch for target key '{target_key}': "
+                                f"predicted {batch_results_target.shape}, expected {expected_shape}"
+                            )
+
+                        result_patches[target_key][start_idx:end_idx] = batch_results_target
+                    del batch_patches, batch_results
+                    torch.cuda.empty_cache()
+
+            return result_patches
+
+    def __stitch(self, result_patches, safe_margin=20):
         result = {}
 
         for target_key in self.target_keys:
@@ -236,15 +241,32 @@ class Predict:
                     for k, y_start in enumerate(self.Y_start):
                         x_slice = slice(x_start, x_start + self.resize_dim[0])
                         y_slice = slice(y_start, y_start + self.resize_dim[1])
+                        patch = stack_result_i[j, k]
 
-                        # Add patch to result and update weight matrix
-                        result_target[i, :, x_slice, y_slice] += stack_result_i[j, k]
-                        weight[i, :, x_slice, y_slice] += 1
+                        # Create weight mask for this patch
+                        patch_weight = np.ones_like(patch)
 
-            # Normalize overlapping regions
+                        # Only apply margin where overlaps exist
+                        if j > 0:  # Left margin
+                            patch_weight[..., :safe_margin, :] = 0
+                        if j < self.N_x - 1:  # Right margin
+                            patch_weight[..., -safe_margin:, :] = 0
+                        if k > 0:  # Top margin
+                            patch_weight[..., :safe_margin] = 0
+                        if k < self.N_y - 1:  # Bottom margin
+                            patch_weight[..., -safe_margin:] = 0
+
+                        # Add weighted contribution
+                        result_target[i, :, x_slice, y_slice] += patch * patch_weight
+                        weight[i, :, x_slice, y_slice] += patch_weight
+
+            # Normalize using the accumulated weights
             np.divide(result_target, weight, out=result_target, where=weight > 0)
 
-            # Crop to original image size and remove unnecessary dimensions
+            # Handle completely unweighted areas (should only happen at very edges)
+            result_target[weight == 0] = result_patches_target.mean()
+
+            # Crop to original image size
             result_target = result_target[:, :, :self.imgs_shape[1], :self.imgs_shape[2]]
             result[target_key] = np.squeeze(result_target)
 
