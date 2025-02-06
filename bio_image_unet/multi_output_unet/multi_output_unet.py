@@ -26,6 +26,7 @@ class MultiOutputUnet(nn.Module):
         self.output_heads = output_heads or {
             'default': {'channels': 1, 'activation': 'sigmoid'}
         }
+        self.deep_supervision = False
 
         # Encoder
         self.encode1 = self.conv(in_channels=in_channels, out_channels=n_filter)
