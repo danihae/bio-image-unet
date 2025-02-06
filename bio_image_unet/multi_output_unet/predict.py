@@ -15,7 +15,7 @@ class Predict:
 
     def __init__(self, imgs, model_params, result_path=None, network=MultiOutputNestedUNet, resize_dim=(1024, 1024),
                  batch_size=1, normalization_mode='single', clip_threshold=(0., 99.98), add_tile=0,
-                 show_progress=True, device: Union[torch.device, str] = 'auto',
+                 compress_tif=False, show_progress=True, device: Union[torch.device, str] = 'auto',
                  progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
         """
         Initialize the Predict class for performing predictions on TIFF files using a standard 2D U-Net.
@@ -49,6 +49,8 @@ class Predict:
             Thresholds for clipping image intensity before prediction.
         add_tile : int, optional
             Additional tiles to add for splitting large images to increase overlap.
+        compress_tif : bool, optional
+            Whether to compress tif files to save storage. Default is False.
         show_progress : bool
             Whether to display a progress bar during prediction.
         device : torch.device or str, optional
@@ -70,6 +72,7 @@ class Predict:
         self.normalization_mode = normalization_mode
         self.clip_threshold = clip_threshold
         self.result_path = result_path
+        self.compress_tif = compress_tif
         self.show_progress = show_progress
 
         # read, preprocess and split data
@@ -100,13 +103,13 @@ class Predict:
         if self.result_path is not None:
             # save as .tif files
             for target_key in self.target_keys:
-                if os.path.isdir(self.result_path):
-                    tifffile.imwrite(self.result_path + target_key + '.tif', result[target_key], compression='deflate',
-                                     compressionargs={'level': 6, 'predictor': 3})
+                target_file = self.result_path + target_key + '.tif' if os.path.exists(self.result_path) else (
+                        self.result_path + '_' + target_key + '.tif')
+                if self.compress_tif:
+                    tifffile.imwrite(target_file, result[target_key], compression='deflate',
+                                     compressionargs={'level': 6}, predictor=3)
                 else:
-                    tifffile.imwrite(self.result_path + '_' + target_key + '.tif', result[target_key],
-                                     compression='deflate',
-                                     compressionargs={'level': 6, 'predictor': 3})
+                    tifffile.imwrite(target_file, result[target_key],)
             del result
             self.result = None
         else:
