@@ -192,7 +192,7 @@ class DataProcess(Dataset):
                 raise ValueError("Unsupported image dimensions")
 
             # Apply padding to the image
-            padded_image = np.pad(data_i['image'], pad_width, mode='reflect')
+            padded_image = np.pad(data_i['image'], pad_width, mode='wrap')
 
             # Pad each target similarly
             padded_targets = {}
@@ -205,7 +205,7 @@ class DataProcess(Dataset):
                         pad_width_target = ((x_gap // 2, x_gap - x_gap // 2), (y_gap // 2, y_gap - y_gap // 2))
                     else:
                         raise ValueError("Unsupported target dimensions")
-                    padded_targets[target_key] = np.pad(target_value, pad_width_target, mode='reflect')
+                    padded_targets[target_key] = np.pad(target_value, pad_width_target, mode='wrap')
 
             # Number of patches in x and y
             N_x = int(np.ceil(padded_image.shape[-2] / self.dim_out[0]))
