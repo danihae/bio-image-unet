@@ -13,7 +13,7 @@ from ..utils import get_device
 class Predict:
     """Class for prediction of movies and images using a U-Net model."""
 
-    def __init__(self, imgs, model_params, result_path=None, network=MultiOutputNestedUNet, resize_dim=(1024, 1024),
+    def __init__(self, imgs, model_params, result_path=None, network=MultiOutputNestedUNet, max_patch_size=(1024, 1024),
                  batch_size=1, normalization_mode='single', clip_threshold=(0., 99.98), add_tile=0,
                  compress_tif=False, show_progress=True, device: Union[torch.device, str] = 'auto',
                  progress_notifier: ProgressNotifier = ProgressNotifier.progress_notifier_tqdm()):
@@ -36,8 +36,8 @@ class Predict:
             Path to save the prediction results as a TIFF file. If None, results are stored in the 'result' attribute.
         network : Network, optional
             Network architecture. Default is MultiOutputUnet
-        resize_dim : Tuple[int, int]
-            Dimensions to resize images for prediction.
+        max_patch_size : Tuple[int, int]
+            Maximal dimensions to resize images for prediction.
         batch_size : int
             Number of images to process in each batch during prediction.
         normalization_mode : str
@@ -66,7 +66,7 @@ class Predict:
         if isinstance(imgs, str):
             imgs = tifffile.imread(imgs)
 
-        self.resize_dim = resize_dim
+        self.max_patch_size = max_patch_size
         self.batch_size = batch_size
         self.add_tile = add_tile
         self.normalization_mode = normalization_mode
@@ -149,27 +149,35 @@ class Predict:
         return imgs
 
     def __split(self, imgs):
+        # Calculate the actual patch size
+        patch_height = min(self.imgs_shape[1], self.max_patch_size[0])
+        patch_width = min(self.imgs_shape[2], self.max_patch_size[1])
+
+        # Adjust patch size to be divisible by 16
+        patch_height = (patch_height // 16) * 16
+        patch_width = (patch_width // 16) * 16
+
+        self.patch_size = (patch_height, patch_width)
+
         # Calculate number of patches
-        self.N_x = int(np.ceil(self.imgs_shape[1] / self.resize_dim[0])) + self.add_tile
-        self.N_y = int(np.ceil(self.imgs_shape[2] / self.resize_dim[1])) + self.add_tile
+        self.N_x = int(np.ceil(self.imgs_shape[1] / patch_height)) + self.add_tile
+        self.N_y = int(np.ceil(self.imgs_shape[2] / patch_width)) + self.add_tile
         self.N_per_img = self.N_x * self.N_y
         self.N = self.N_per_img * self.imgs_shape[0]
 
         # Pad images if needed
-        pad_x = max(self.resize_dim[0] - self.imgs_shape[1], 0)
-        pad_y = max(self.resize_dim[1] - self.imgs_shape[2], 0)
+        pad_x = max(patch_height - self.imgs_shape[1], 0)
+        pad_y = max(patch_width - self.imgs_shape[2], 0)
         imgs = np.pad(imgs, ((0, 0), (0, pad_x), (0, pad_y)), 'reflect')
 
         # Calculate starting indices (preserved for stitching)
-        self.X_start = np.linspace(0, imgs.shape[1] - self.resize_dim[0], self.N_x).astype('uint16')
-        self.Y_start = np.linspace(0, imgs.shape[2] - self.resize_dim[1], self.N_y).astype('uint16')
+        self.X_start = np.linspace(0, imgs.shape[1] - patch_height, self.N_x).astype('uint16')
+        self.Y_start = np.linspace(0, imgs.shape[2] - patch_width, self.N_y).astype('uint16')
 
         # Generate patches using vectorized operations
-        window_shape = (self.resize_dim[0], self.resize_dim[1])
-        patches = np.lib.stride_tricks.sliding_window_view(imgs, window_shape, axis=(1, 2))
-        patches = patches[:, ::self.X_start[1] if self.N_x > 1 else 1,
-                  ::self.Y_start[1] if self.N_y > 1 else 1]
-        patches = patches.reshape(-1, *window_shape)
+        patches = np.lib.stride_tricks.sliding_window_view(imgs, self.patch_size, axis=(1, 2))
+        patches = patches[:, ::self.X_start[1] if self.N_x > 1 else 1, ::self.Y_start[1] if self.N_y > 1 else 1]
+        patches = patches.reshape(-1, *self.patch_size)
 
         return patches
 
@@ -178,7 +186,7 @@ class Predict:
             # Initialize result_patches with correct dimensions
             result_patches = {
                 target_key: np.zeros(
-                    (patches.shape[0], self.model_params['output_heads'][target_key]['channels'], *self.resize_dim),
+                    (patches.shape[0], self.model_params['output_heads'][target_key]['channels'], *self.patch_size),
                     dtype='float32'
                 )
                 for target_key in self.target_keys
@@ -197,7 +205,7 @@ class Predict:
                     # Prepare batch patches
                     batch_patches = torch.tensor(patches[start_idx:end_idx], dtype=torch.float16).to(self.device)
                     batch_patches = batch_patches.view(
-                        -1, self.model_params['in_channels'], self.resize_dim[0], self.resize_dim[1]
+                        -1, self.model_params['in_channels'], self.patch_size[0], self.patch_size[1]
                     )
 
                     # Get model predictions
@@ -229,8 +237,8 @@ class Predict:
             result_patches_target = result_patches[target_key]
             result_target = np.zeros(
                 shape=(self.imgs_shape[0], self.model_params['output_heads'][target_key]['channels'],
-                       max(self.resize_dim[0], self.imgs_shape[1]),
-                       max(self.resize_dim[1], self.imgs_shape[2])),
+                       max(self.patch_size[0], self.imgs_shape[1]),
+                       max(self.patch_size[1], self.imgs_shape[2])),
                 dtype='float32'
             )
             weight = np.zeros_like(result_target)
@@ -242,8 +250,8 @@ class Predict:
 
                 for j, x_start in enumerate(self.X_start):
                     for k, y_start in enumerate(self.Y_start):
-                        x_slice = slice(x_start, x_start + self.resize_dim[0])
-                        y_slice = slice(y_start, y_start + self.resize_dim[1])
+                        x_slice = slice(x_start, x_start + self.patch_size[0])
+                        y_slice = slice(y_start, y_start + self.patch_size[1])
                         patch = stack_result_i[j, k]
 
                         # Create weight mask for this patch
