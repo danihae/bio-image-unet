@@ -154,8 +154,8 @@ class Predict:
         patch_width = min(self.imgs_shape[2], self.max_patch_size[1])
 
         # Adjust patch size to be divisible by 16
-        patch_height = (patch_height // 16) * 16
-        patch_width = (patch_width // 16) * 16
+        patch_height = ((patch_height + 15) // 16) * 16
+        patch_width = ((patch_width + 15) // 16) * 16
 
         self.patch_size = (patch_height, patch_width)
 
