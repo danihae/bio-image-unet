@@ -1,4 +1,4 @@
-from typing import Dict
+from typing import Dict, Tuple, Union
 
 import torch
 from torch import nn
@@ -31,12 +31,13 @@ class FirstVGGBlock(nn.Module):
 
 
 class VGGBlock(nn.Module):
-    def __init__(self, in_channels, middle_channels, out_channels, dropout=0.):
+    def __init__(self, in_channels, middle_channels, out_channels, dropout=0., dilation=1):
         super().__init__()
+        padding = dilation  # ensures same spatial dimensions
         self.relu = nn.LeakyReLU(negative_slope=0.1, inplace=True)
-        self.conv1 = nn.Conv2d(in_channels, middle_channels, 3, padding=1)
+        self.conv1 = nn.Conv2d(in_channels, middle_channels, kernel_size=3, padding=padding, dilation=dilation)
         self.bn1 = nn.BatchNorm2d(middle_channels)
-        self.conv2 = nn.Conv2d(middle_channels, out_channels, 3, padding=1)
+        self.conv2 = nn.Conv2d(middle_channels, out_channels, kernel_size=3, padding=padding, dilation=dilation)
         self.bn2 = nn.BatchNorm2d(out_channels)
         self.dropout = nn.Dropout2d(dropout)
 
@@ -55,23 +56,27 @@ class VGGBlock(nn.Module):
 
 
 class MultiOutputNestedUNet(nn.Module):
-    def __init__(self, in_channels=1, output_heads: Dict[str, dict] = None, n_filter=32, deep_supervision=False,
-                 train_mode=True):
+    def __init__(self, in_channels=1, output_heads: Dict[str, dict] = None, n_filter: int = 32,
+                 deep_supervision: bool = False, dilation: Union[bool, Tuple[int, int, int, int, int]] = False,
+                 train_mode: bool = True):
         super().__init__()
         self.output_heads = output_heads or {'default': {'channels': 1, 'activation': 'sigmoid'}}
         self.deep_supervision = deep_supervision
         self.train_mode = train_mode
+        self.dilation = dilation
+        if not self.dilation:
+            self.dilation = (1, 1, 1, 1, 1)
 
         nb_filter = [n_filter, n_filter * 2, n_filter * 4, n_filter * 8, n_filter * 16]
 
         self.pool = nn.MaxPool2d(2, 2)
         self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
 
-        self.conv0_0 = VGGBlock(in_channels, nb_filter[0], nb_filter[0])
-        self.conv1_0 = VGGBlock(nb_filter[0], nb_filter[1], nb_filter[1])
-        self.conv2_0 = VGGBlock(nb_filter[1], nb_filter[2], nb_filter[2])
-        self.conv3_0 = VGGBlock(nb_filter[2], nb_filter[3], nb_filter[3])
-        self.conv4_0 = VGGBlock(nb_filter[3], nb_filter[4], nb_filter[4])
+        self.conv0_0 = VGGBlock(in_channels, nb_filter[0], nb_filter[0], dilation=dilation[0])
+        self.conv1_0 = VGGBlock(nb_filter[0], nb_filter[1], nb_filter[1], dilation=dilation[1])
+        self.conv2_0 = VGGBlock(nb_filter[1], nb_filter[2], nb_filter[2], dilation=dilation[2])
+        self.conv3_0 = VGGBlock(nb_filter[2], nb_filter[3], nb_filter[3], dilation=dilation[3])
+        self.conv4_0 = VGGBlock(nb_filter[3], nb_filter[4], nb_filter[4], dilation=dilation[4])
 
         self.conv0_1 = VGGBlock(nb_filter[0] + nb_filter[1], nb_filter[0], nb_filter[0])
         self.conv1_1 = VGGBlock(nb_filter[1] + nb_filter[2], nb_filter[1], nb_filter[1])
