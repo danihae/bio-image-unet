@@ -1,7 +1,7 @@
 import os
 import random
 import time
-from typing import Union
+from typing import Union, Tuple
 
 import torch.optim as optim
 from matplotlib import pyplot as plt
@@ -18,7 +18,9 @@ from ..utils import init_weights, get_device
 class Trainer:
     def __init__(self, dataset: DataProcess, num_epochs: int, network=MultiOutputNestedUNet, levels: int = 4,
                  batch_size: int = 4, lr: float = 1e-4, in_channels: int = 1, output_heads: Union[None, dict] = None,
-                 n_filter: int = 64, deep_supervision: bool = False, val_split: float = 0.2, save_dir: str = './',
+                 n_filter: int = 64, deep_supervision: bool = False,
+                 dilation: Union[bool, Tuple[int, int, int, int, int]] = False,
+                 val_split: float = 0.2, save_dir: str = './',
                  save_name: str = 'model.pt', save_iter: bool = False, load_weights: bool = False,
                  device: Union[torch.device, str] = 'auto'):
         if device == 'auto':
@@ -26,7 +28,7 @@ class Trainer:
         else:
             self.device = torch.device(device)
 
-        self.model = network(n_filter=n_filter, in_channels=in_channels, output_heads=output_heads,
+        self.model = network(n_filter=n_filter, in_channels=in_channels, output_heads=output_heads, dilation=dilation,
                              deep_supervision=deep_supervision).to(self.device)
         self.model.apply(init_weights)
         self.data = dataset
@@ -37,6 +39,7 @@ class Trainer:
         self.best_loss = torch.tensor(float('inf'))
         self.save_iter = save_iter
         self.n_filter = n_filter
+        self.dilation = dilation
         self.in_channels = in_channels
         self.output_heads = output_heads
 
@@ -54,9 +57,6 @@ class Trainer:
         self.loss_weights = {
             name: config.get('weight', 1.0) for name, config in self.output_heads.items()
         }
-
-        # Initialize channel weights for each output head
-        self.channel_weights = {name: torch.ones(config['channels']) for name, config in self.output_heads.items()}
 
         # Split training and validation data
         num_val = int(len(dataset) * val_split)
@@ -79,6 +79,7 @@ class Trainer:
             'lr': self.lr,
             'n_filter': self.n_filter,
             'deep_supervision': deep_supervision,
+            'dilation': self.dilation,
             'batch_size': self.batch_size,
             'augmentation': self.data.aug_factor,
             'clip_threshold': self.data.clip_threshold,
