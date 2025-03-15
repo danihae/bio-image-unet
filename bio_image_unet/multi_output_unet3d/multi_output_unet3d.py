@@ -109,7 +109,7 @@ class MultiOutputUnet3D(nn.Module):
         e2 = self.encode2(e1)
 
         if self.use_interpolation:
-            m1 = F.interpolate(e2, scale_factor=0.5, mode='trilinear', align_corners=False)
+            m1 = F.interpolate(e2, scale_factor=0.5, mode='nearest')
         else:
             m1 = self.maxpool1(e2)
 
@@ -117,7 +117,7 @@ class MultiOutputUnet3D(nn.Module):
         e4 = self.encode4(e3)
 
         if self.use_interpolation:
-            m2 = F.interpolate(e4, scale_factor=0.5, mode='trilinear', align_corners=False)
+            m2 = F.interpolate(e4, scale_factor=0.5, mode='nearest')
         else:
             m2 = self.maxpool2(e4)
 
@@ -125,7 +125,7 @@ class MultiOutputUnet3D(nn.Module):
         e6 = self.encode6(e5)
 
         if self.use_interpolation:
-            m3 = F.interpolate(e6, scale_factor=0.5, mode='trilinear', align_corners=False)
+            m3 = F.interpolate(e6, scale_factor=0.5, mode='nearest')
         else:
             m3 = self.maxpool3(e6)
 
@@ -135,7 +135,7 @@ class MultiOutputUnet3D(nn.Module):
 
         # Decoding
         if self.use_interpolation:
-            u1 = F.interpolate(mid2, scale_factor=2, mode='trilinear', align_corners=False)
+            u1 = F.interpolate(mid2, scale_factor=2, mode='nearest')
             u1 = self.up1_conv(u1)
         else:
             u1 = self.up1(mid2)
@@ -144,7 +144,7 @@ class MultiOutputUnet3D(nn.Module):
         d2 = self.decode2(d1)
 
         if self.use_interpolation:
-            u2 = F.interpolate(d2, scale_factor=2, mode='trilinear', align_corners=False)
+            u2 = F.interpolate(d2, scale_factor=2, mode='nearest')
             u2 = self.up2_conv(u2)
         else:
             u2 = self.up2(d2)
@@ -153,7 +153,7 @@ class MultiOutputUnet3D(nn.Module):
         d4 = self.decode4(d3)
 
         if self.use_interpolation:
-            u3 = F.interpolate(d4, scale_factor=2, mode='trilinear', align_corners=False)
+            u3 = F.interpolate(d4, scale_factor=2, mode='nearest')
             u3 = self.up3_conv(u3)
         else:
             u3 = self.up3(d4)
