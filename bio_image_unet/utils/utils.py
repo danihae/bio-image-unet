@@ -18,12 +18,7 @@ def save_as_tif(imgs, filename, normalize=False):
     normalize : bool
         If true, data is normalized [0, 255]
     """
-    if normalize:
-        imgs = imgs.astype('float32')
-        imgs = imgs - np.nanmin(imgs)
-        imgs /= np.nanmax(imgs)
-        imgs *= 255
-    imgs = imgs.astype('uint8')
+    imgs = imgs.astype('float16')
     tifffile.imwrite(filename, imgs)
 
 
