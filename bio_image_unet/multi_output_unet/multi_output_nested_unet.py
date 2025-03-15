@@ -64,7 +64,7 @@ class MultiOutputNestedUNet(nn.Module):
         self.deep_supervision = deep_supervision
         self.train_mode = train_mode
         self.dilation = dilation
-        if not self.dilation:
+        if self.dilation is False:
             self.dilation = (1, 1, 1, 1, 1)
 
         nb_filter = [n_filter, n_filter * 2, n_filter * 4, n_filter * 8, n_filter * 16]
