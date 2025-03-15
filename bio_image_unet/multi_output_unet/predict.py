@@ -187,7 +187,7 @@ class Predict:
             result_patches = {
                 target_key: np.zeros(
                     (patches.shape[0], self.model_params['output_heads'][target_key]['channels'], *self.patch_size),
-                    dtype='float32'
+                    dtype='float16'
                 )
                 for target_key in self.target_keys
             }
