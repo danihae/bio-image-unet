@@ -187,10 +187,10 @@ class DataProcess(Dataset):
     def __augment(self):
         target_types = {key: self.target_types[key] for key in self.target_keys}
         aug_pipeline = Compose(transforms=[
-            Blur(blur_limit=self.blur_limit, p=0.25),
-            RandomScale(scale_limit=self.scale_limit, p=0.5,
+            RandomScale(scale_limit=self.scale_limit, p=0.75,
                         interpolation=cv2.INTER_NEAREST,
                         mask_interpolation=cv2.INTER_NEAREST),
+            Blur(blur_limit=self.blur_limit, p=0.25),
             PadIfNeeded(min_height=self.dim_out[0], min_width=self.dim_out[1],
                         border_mode=cv2.BORDER_WRAP, position='bottom_left'),
             RandomCrop(height=self.dim_out[0], width=self.dim_out[1], p=1),
