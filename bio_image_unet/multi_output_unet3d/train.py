@@ -109,6 +109,8 @@ class Trainer:
             self.criterion = TverskyLoss(loss_params[0], loss_params[1])
         elif loss_function == 'logcoshTversky':
             self.criterion = logcoshTverskyLoss(loss_params[0], loss_params[1])
+        elif loss_function == 'BCEDiceTemporalLoss':
+            self.criterion = BCEDiceTemporalLoss(loss_params=loss_params)
         else:
             raise ValueError(f'Loss "{loss_function}" not defined!')
         self.criterion_time = nn.SmoothL1Loss()
@@ -153,6 +155,8 @@ class Trainer:
             return TverskyLoss()
         elif loss_name == 'logcoshTverskyLoss':
             return logcoshTverskyLoss()
+        elif loss_name == 'BCEDiceTemporalLoss':
+            return BCEDiceTemporalLoss()
         else:
             raise ValueError(f'Loss "{loss_name}" not defined!')
 
@@ -257,10 +261,12 @@ class Trainer:
 
             # Check for improvement in validation loss
             if val_loss < self.best_loss:
-                print('\nValidation loss improved from %s to %s - saving model state' % (
-                    round(self.best_loss.item(), 5), round(val_loss.item(), 5)))
+                print(
+                    f'\nValidation loss improved from {self.best_loss.item():.5f} to {val_loss.item():.5f} - saving model state')
                 self.state['best_loss'] = self.best_loss = val_loss
                 torch.save(self.state, os.path.join(self.save_dir, self.save_name))
+            else:
+                print(f'\nValidation loss did not improve from {self.best_loss.item():.5f}')
 
             # Save model state after each epoch if required
             if self.save_iter:

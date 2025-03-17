@@ -1,5 +1,6 @@
 import torch
-from torch import nn as nn
+import torch.nn as nn
+import torch.nn.functional as F
 
 
 class BCELoss(nn.Module):
@@ -14,6 +15,7 @@ class BCELoss(nn.Module):
         By default, the losses are averaged over each loss element in the batch.
         If size_average is set to False, the losses are instead summed for each minibatch (default is True).
     """
+
     def __init__(self, weight=None, size_average=True):
         super(BCELoss, self).__init__()
         self.bce_loss = nn.BCEWithLogitsLoss(weight=weight, reduction='mean' if size_average else 'sum')
@@ -46,6 +48,7 @@ class SoftDiceLoss(nn.Module):
     smooth : float, optional
         Smoothing factor to avoid division by zero (default is 1.0).
     """
+
     def __init__(self, smooth=1.0):
         super(SoftDiceLoss, self).__init__()
         self.smooth = smooth
@@ -86,6 +89,7 @@ class BCEDiceLoss(nn.Module):
     beta : float
         Weight for the Dice Loss component.
     """
+
     def __init__(self, alpha, beta):
         super(BCEDiceLoss, self).__init__()
         self.bce = BCELoss()
@@ -118,6 +122,7 @@ class logcoshDiceLoss(nn.Module):
 
     Combines the Log-Cosh function with Dice Loss for improved stability.
     """
+
     def __init__(self):
         super(logcoshDiceLoss, self).__init__()
         self.dice = SoftDiceLoss()
@@ -155,6 +160,7 @@ class TverskyLoss(nn.Module):
     smooth : float, optional
         Smoothing factor to avoid division by zero (default is 1).
     """
+
     def __init__(self, alpha=0.5, beta=0.5, smooth=1):
         super(TverskyLoss, self).__init__()
         self.alpha = alpha
@@ -204,6 +210,7 @@ class logcoshTverskyLoss(nn.Module):
     smooth : float, optional
         Smoothing factor to avoid division by zero (default is 1).
     """
+
     def __init__(self, alpha=0.5, beta=0.5, smooth=1):
         super(logcoshTverskyLoss, self).__init__()
         self.alpha = alpha
@@ -238,3 +245,54 @@ class logcoshTverskyLoss(nn.Module):
         Tversky = (TP + self.smooth) / (TP + self.alpha * FP + self.beta * FN + self.smooth)
 
         return torch.log(torch.cosh(1 - Tversky))
+
+
+class TemporalConsistencyLoss(nn.Module):
+    def __init__(self):
+        super(TemporalConsistencyLoss, self).__init__()
+        self.loss_fn = nn.L1Loss()
+
+    def forward(self, predictions):
+        """
+        predictions: Tensor of shape (B, C, Z, X, Y)
+                     where Z is the temporal dimension
+        """
+        # Compute loss between consecutive frames along the Z dimension
+        loss = self.loss_fn(predictions[:, :, 1:, :, :], predictions[:, :, :-1, :, :])
+
+        return loss
+
+
+class BCEDiceTemporalLoss(nn.Module):
+    def __init__(self, loss_params=(1.0, 0.1)):
+        """
+        Combined loss for 3D/temporal segmentation with BCEDice and temporal consistency.
+
+        Args:
+            loss_params (tuple): Weights for (BCEDice, TemporalConsistency) losses.
+                                Default is (1.0, 0.1).
+        """
+        super(BCEDiceTemporalLoss, self).__init__()
+        self.bce_dice_loss = BCEDiceLoss(1, 1)  # Your existing implementation
+        self.temporal_consistency_loss = TemporalConsistencyLoss()
+        self.loss_params = loss_params
+
+    def forward(self, predictions, targets):
+        """
+        Args:
+            predictions: Tensor of shape (batch_size, frames, channels, height, width)
+            targets: Tensor of shape (batch_size, frames, channels, height, width)
+        """
+        # Compute BCEDice loss using your implementation
+        bce_dice_loss_value = self.bce_dice_loss(predictions, targets)
+
+        # Compute Temporal Consistency Loss
+        temporal_consistency_loss_value = self.temporal_consistency_loss(predictions)
+
+        # Combine losses with weights from the tuple
+        total_loss = (
+                self.loss_params[0] * bce_dice_loss_value +
+                self.loss_params[1] * temporal_consistency_loss_value
+        )
+
+        return total_loss
