@@ -19,7 +19,7 @@ class Trainer:
     def __init__(self, dataset: DataProcess, num_epochs: int, network=MultiOutputNestedUNet, levels: int = 4,
                  batch_size: int = 4, lr: float = 1e-4, in_channels: int = 1, output_heads: Union[None, dict] = None,
                  n_filter: int = 64, deep_supervision: bool = False,
-                 dilation: Union[bool, Tuple[int, int, int, int, int]] = False,
+                 dilation: Union[bool, Tuple[int, int, int, int, int], Tuple[int, int, int, int]] = False,
                  val_split: float = 0.2, save_dir: str = './',
                  save_name: str = 'model.pt', save_iter: bool = False, load_weights: bool = False,
                  device: Union[torch.device, str] = 'auto'):
