@@ -72,11 +72,11 @@ class MultiOutputNestedUNet(nn.Module):
         self.pool = nn.MaxPool2d(2, 2)
         self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
 
-        self.conv0_0 = VGGBlock(in_channels, nb_filter[0], nb_filter[0], dilation=dilation[0])
-        self.conv1_0 = VGGBlock(nb_filter[0], nb_filter[1], nb_filter[1], dilation=dilation[1])
-        self.conv2_0 = VGGBlock(nb_filter[1], nb_filter[2], nb_filter[2], dilation=dilation[2])
-        self.conv3_0 = VGGBlock(nb_filter[2], nb_filter[3], nb_filter[3], dilation=dilation[3])
-        self.conv4_0 = VGGBlock(nb_filter[3], nb_filter[4], nb_filter[4], dilation=dilation[4])
+        self.conv0_0 = VGGBlock(in_channels, nb_filter[0], nb_filter[0], dilation=self.dilation[0])
+        self.conv1_0 = VGGBlock(nb_filter[0], nb_filter[1], nb_filter[1], dilation=self.dilation[1])
+        self.conv2_0 = VGGBlock(nb_filter[1], nb_filter[2], nb_filter[2], dilation=self.dilation[2])
+        self.conv3_0 = VGGBlock(nb_filter[2], nb_filter[3], nb_filter[3], dilation=self.dilation[3])
+        self.conv4_0 = VGGBlock(nb_filter[3], nb_filter[4], nb_filter[4], dilation=self.dilation[4])
 
         self.conv0_1 = VGGBlock(nb_filter[0] + nb_filter[1], nb_filter[0], nb_filter[0])
         self.conv1_1 = VGGBlock(nb_filter[1] + nb_filter[2], nb_filter[1], nb_filter[1])
@@ -158,11 +158,12 @@ class MultiOutputNestedUNet(nn.Module):
 
 class MultiOutputNestedUNet_3Levels(nn.Module):
     def __init__(self, in_channels=1, output_heads: Dict[str, dict] = None, n_filter=32, deep_supervision=False,
-                 train_mode=True, **kwargs):
+                 dilation=False, train_mode=True, **kwargs):
         super().__init__()
         self.output_heads = output_heads or {'default': {'channels': 1, 'activation': 'sigmoid'}}
         self.deep_supervision = deep_supervision
         self.train_mode = train_mode
+        self.dilation = dilation if dilation is not False else (1, 1, 1, 1)
 
         # Reduced from five to four entries to remove the fourth pooling level
         nb_filter = [n_filter, n_filter * 2, n_filter * 4, n_filter * 8]
@@ -170,10 +171,10 @@ class MultiOutputNestedUNet_3Levels(nn.Module):
         self.pool = nn.MaxPool2d(2, 2)
         self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
 
-        self.conv0_0 = VGGBlock(in_channels, nb_filter[0], nb_filter[0])
-        self.conv1_0 = VGGBlock(nb_filter[0], nb_filter[1], nb_filter[1])
-        self.conv2_0 = VGGBlock(nb_filter[1], nb_filter[2], nb_filter[2])
-        self.conv3_0 = VGGBlock(nb_filter[2], nb_filter[3], nb_filter[3])
+        self.conv0_0 = VGGBlock(in_channels, nb_filter[0], nb_filter[0], self.dilation[0])
+        self.conv1_0 = VGGBlock(nb_filter[0], nb_filter[1], nb_filter[1], self.dilation[1])
+        self.conv2_0 = VGGBlock(nb_filter[1], nb_filter[2], nb_filter[2], self.dilation[2])
+        self.conv3_0 = VGGBlock(nb_filter[2], nb_filter[3], nb_filter[3], self.dilation[3])
 
         self.conv0_1 = VGGBlock(nb_filter[0] + nb_filter[1], nb_filter[0], nb_filter[0])
         self.conv1_1 = VGGBlock(nb_filter[1] + nb_filter[2], nb_filter[1], nb_filter[1])

@@ -63,6 +63,8 @@ class Predict:
         else:
             self.device = torch.device(device)
 
+        self.precision = torch.float16 if self.device.type == 'cuda' or self.device.type == 'mps' else torch.float32
+
         if isinstance(imgs, str):
             imgs = tifffile.imread(imgs)
 
@@ -90,7 +92,7 @@ class Predict:
                              deep_supervision=self.model_params.get('deep_supervision', False),
                              train_mode=False).to(self.device)
         self.model.load_state_dict(self.model_params['state_dict'])
-        self.model.to(torch.float16)
+        self.model.to(self.precision)
         self.model.eval()
         self.target_keys = self.model_params['output_heads'].keys()
         result_patches = self.__predict(patches, self.batch_size, progress_notifier)
@@ -182,7 +184,7 @@ class Predict:
         return patches
 
     def __predict(self, patches, batch_size=1, progress_notifier=None):
-        with torch.autocast(device_type='cuda', dtype=torch.float16), torch.no_grad():
+        with torch.no_grad():
             # Initialize result_patches with correct dimensions
             result_patches = {
                 target_key: np.zeros(
@@ -192,43 +194,42 @@ class Predict:
                 for target_key in self.target_keys
             }
 
-            with torch.no_grad():
-                num_batches = int(np.ceil(patches.shape[0] / batch_size))
-                _progress_notifier = range(num_batches)
-                if self.show_progress and progress_notifier:
-                    _progress_notifier = progress_notifier.iterator(_progress_notifier)
+            num_batches = int(np.ceil(patches.shape[0] / batch_size))
+            _progress_notifier = range(num_batches)
+            if self.show_progress and progress_notifier:
+                _progress_notifier = progress_notifier.iterator(_progress_notifier)
 
-                for batch_idx in _progress_notifier:
-                    start_idx = batch_idx * batch_size
-                    end_idx = min(start_idx + batch_size, patches.shape[0])
+            for batch_idx in _progress_notifier:
+                start_idx = batch_idx * batch_size
+                end_idx = min(start_idx + batch_size, patches.shape[0])
 
-                    # Prepare batch patches
-                    batch_patches = torch.tensor(patches[start_idx:end_idx], dtype=torch.float16).to(self.device)
-                    batch_patches = batch_patches.view(
-                        -1, self.model_params['in_channels'], self.patch_size[0], self.patch_size[1]
-                    )
+                # Prepare batch patches
+                batch_patches = torch.tensor(patches[start_idx:end_idx], dtype=self.precision).to(self.device)
+                batch_patches = batch_patches.view(
+                    -1, self.model_params['in_channels'], self.patch_size[0], self.patch_size[1]
+                )
 
-                    # Get model predictions
-                    batch_results = self.model(batch_patches)
+                # Get model predictions
+                batch_results = self.model(batch_patches)
 
-                    # Assign predictions to result_patches
-                    for target_key in self.target_keys:
-                        # Extract model output for this target key
-                        batch_results_target = batch_results[target_key].cpu().numpy()
+                # Assign predictions to result_patches
+                for target_key in self.target_keys:
+                    # Extract model output for this target key
+                    batch_results_target = batch_results[target_key].cpu().numpy()
 
-                        # Ensure shapes match before assignment
-                        expected_shape = result_patches[target_key][start_idx:end_idx].shape
-                        if batch_results_target.shape != expected_shape:
-                            raise RuntimeError(
-                                f"Shape mismatch for target key '{target_key}': "
-                                f"predicted {batch_results_target.shape}, expected {expected_shape}"
-                            )
+                    # Ensure shapes match before assignment
+                    expected_shape = result_patches[target_key][start_idx:end_idx].shape
+                    if batch_results_target.shape != expected_shape:
+                        raise RuntimeError(
+                            f"Shape mismatch for target key '{target_key}': "
+                            f"predicted {batch_results_target.shape}, expected {expected_shape}"
+                        )
 
-                        result_patches[target_key][start_idx:end_idx] = batch_results_target
-                    del batch_patches, batch_results
-                    torch.cuda.empty_cache()
+                    result_patches[target_key][start_idx:end_idx] = batch_results_target
+                del batch_patches, batch_results
+                torch.cuda.empty_cache()
 
-            return result_patches
+        return result_patches
 
     def __stitch(self, result_patches, safe_margin=20):
         result = {}
