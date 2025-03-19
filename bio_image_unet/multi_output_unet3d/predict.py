@@ -1,3 +1,4 @@
+import os
 from typing import Union
 
 import numpy as np
@@ -15,6 +16,7 @@ class Predict:
     def __init__(self, imgs, model_params, result_path=None,
                  network=MultiOutputUnet3D,
                  max_patch_size=(64, 256, 256),  # (depth, height, width)
+                 overlap_factor=0.1,
                  batch_size=1,
                  normalization_mode='single',
                  clip_threshold=(0., 99.98),
@@ -33,6 +35,7 @@ class Predict:
             imgs = tifffile.imread(imgs)
 
         self.max_patch_size = max_patch_size
+        self.overlap_factor = overlap_factor
         self.batch_size = batch_size
         self.add_tile = add_tile
         self.normalization_mode = normalization_mode
@@ -71,7 +74,8 @@ class Predict:
         # Save or store results
         if self.result_path is not None:
             for target_key in self.target_keys:
-                target_file = (self.result_path + f'_{target_key}.tif')
+                target_file = self.result_path + target_key + '.tif' if os.path.exists(self.result_path) else (
+                        self.result_path + '_' + target_key + '.tif')
                 tifffile.imwrite(target_file,
                                  result[target_key],
                                  compression='deflate' if self.compress_tif else None)
@@ -126,8 +130,8 @@ class Predict:
             min(s_img, s_patch) for s_img, s_patch in zip((D_img, H_img, W_img), self.max_patch_size)
         ]
 
-        # Define strides (50% overlap)
-        stride_dhw = [max(1, int(s / 2)) for s in (D_patch, H_patch, W_patch)]
+        # Define strides
+        stride_dhw = [max(1, int(s * (1 - self.overlap_factor))) for s in (D_patch, H_patch, W_patch)]
 
         # Calculate starting indices for each dimension
         self.Z_start = list(range(0, max(D_img - D_patch + 1, 1), stride_dhw[0]))
