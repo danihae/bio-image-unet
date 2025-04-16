@@ -255,21 +255,21 @@ class Predict:
                                     patch_weight[:, i, :, :] = i / blend_margin
                             if z_idx < self.N_z - 1:  # Back overlap
                                 for i in range(blend_margin):
-                                    patch_weight[:, -(i + 1), :, :] = i / blend_margin
+                                    patch_weight[:, max(-(i + 1), 0), :, :] = i / blend_margin
 
                             if y_idx > 0:  # Top overlap
                                 for i in range(blend_margin):
                                     patch_weight[:, :, i, :] = i / blend_margin
                             if y_idx < self.N_y - 1:  # Bottom overlap
                                 for i in range(blend_margin):
-                                    patch_weight[:, :, -(i + 1), :] = i / blend_margin
+                                    patch_weight[:, :, max(-(i + 1), 0), :] = i / blend_margin
 
                             if x_idx > 0:  # Left overlap
                                 for i in range(blend_margin):
                                     patch_weight[:, :, :, i] = i / blend_margin
                             if x_idx < self.N_x - 1:  # Right overlap
                                 for i in range(blend_margin):
-                                    patch_weight[:, :, :, -(i + 1)] = i / blend_margin
+                                    patch_weight[:, :, :, max(-(i + 1), 0)] = i / blend_margin
 
                             # Define slices for placing the patch in the result volume
                             z_slice = slice(z_start, min(z_start + self.patch_size[0], depth))
