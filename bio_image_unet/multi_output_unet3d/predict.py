@@ -200,7 +200,7 @@ class Predict:
 
         return results
 
-    def __stitch(self, result_patches, blend_margin=20):
+    def __stitch(self, result_patches, blend_margin=16):
         """
         Stitch 3D patches back into a complete volume with proper overlap handling.
 
@@ -251,10 +251,10 @@ class Predict:
 
                             # Apply blending weights at patch edges where overlaps exist
                             if z_idx > 0:  # Front overlap
-                                for i in range(blend_margin):
+                                for i in range(min(blend_margin, self.N_z)):
                                     patch_weight[:, i, :, :] = i / blend_margin
                             if z_idx < self.N_z - 1:  # Back overlap
-                                for i in range(blend_margin):
+                                for i in range(min(blend_margin, self.N_z)):
                                     patch_weight[:, max(-(i + 1), 0), :, :] = i / blend_margin
 
                             if y_idx > 0:  # Top overlap
