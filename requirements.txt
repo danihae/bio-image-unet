@@ -7,5 +7,5 @@ packaging
 torch>=2.0
 jupyter
 tensorboard
-napari~=0.4.18
+napari>=0.4.18
 matplotlib>=3.5.0
