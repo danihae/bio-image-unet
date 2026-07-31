@@ -3,7 +3,7 @@ name = "bio-image-unet"
 packages = [
     { include = "bio_image_unet" }
 ]
-version = "1.2.0"
+version = "1.2.1"
 description = "Implementations of U-Net, Siam U-Net, U-Net++ and 3D U-Net for biological image segmentation"
 authors = ["Daniel Haertter", "Yuxi Long"]
 readme = "README.md"

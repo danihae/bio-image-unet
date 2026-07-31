@@ -177,3 +177,34 @@ class TestAutoPatchSize:
         patch = auto_patch_size((4096, 4096), 64, 4, torch.device('cpu'),
                                 memory_fraction=1e-6, min_side=(256, 256))
         assert min(patch) >= 256
+
+    def test_budget_does_not_track_free_memory(self):
+        """The budget must be a stable device property.
+
+        It was briefly derived from psutil's *available* memory, which drifts with
+        whatever else the machine is doing. That silently changed the tile grid --
+        and so the result at seams -- between two runs on the same input.
+        """
+        import torch
+        for device in (torch.device('cpu'), torch.device('mps'), torch.device('cuda')):
+            try:
+                first = available_memory(device)
+            except Exception:
+                continue
+            assert first == available_memory(device)
+            assert first > 0
+
+    def test_plan_is_reproducible(self):
+        import torch
+        device = torch.device('cpu')
+        for shape, n_filter in [((1200, 1200), 64), ((2000, 2000), 64), ((64, 428, 472), 16)]:
+            plans = {auto_patch_size(shape, n_filter, 2, device) for _ in range(5)}
+            assert len(plans) == 1, (shape, plans)
+
+    def test_small_budget_changes_do_not_move_the_plan(self):
+        """A few per cent either way in the reported budget must not re-tile."""
+        import torch
+        device = torch.device('cpu')
+        base = auto_patch_size((4096, 4096), 64, 2, device, memory_fraction=0.30)
+        for fraction in (0.295, 0.302, 0.305):
+            assert auto_patch_size((4096, 4096), 64, 2, device, memory_fraction=fraction) == base

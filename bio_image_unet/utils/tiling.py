@@ -27,9 +27,19 @@ __all__ = ['plan_axis', 'plan_grid', 'pad_to_patch', 'redundancy', 'TileBlender'
 ACTIVATION_BYTES_PER_FILTER = 21
 
 
+# Granularity the auto-derived patch side is snapped to, so that a slightly
+# different memory reading does not change the tile grid.
+QUANTUM = 64
+
+
 def _round_up(value: int, multiple: int) -> int:
     """Round ``value`` up to the next multiple of ``multiple``."""
     return int(((value + multiple - 1) // multiple) * multiple)
+
+
+def _round_down(value: int, multiple: int) -> int:
+    """Round ``value`` down to a multiple of ``multiple``."""
+    return int((value // multiple) * multiple)
 
 
 def plan_axis(size: int, max_patch: int, min_overlap: int = 32, multiple: int = 16,
@@ -152,7 +162,14 @@ def pad_to_patch(arr: np.ndarray, patch_size, axes) -> np.ndarray:
 
 
 def available_memory(device) -> int:
-    """Bytes of memory usable for prediction on ``device``.
+    """Memory budget for prediction on ``device``, in bytes.
+
+    This is deliberately a *stable* figure -- installed device memory, not
+    momentarily free memory. The budget decides the patch size, the patch size
+    decides the tile grid, and the tile grid changes the result at seams, so a
+    budget that drifted with transient memory pressure would make predictions
+    irreproducible from one run to the next. Headroom comes from the fraction the
+    caller applies and from retrying smaller after an out-of-memory error.
 
     Parameters
     ----------
@@ -162,24 +179,26 @@ def available_memory(device) -> int:
     Returns
     -------
     int
-        Free device memory on CUDA, the recommended working set on MPS (unified
-        memory, so bounded by RAM), or available system RAM on CPU.
+        Total device memory on CUDA, the recommended maximum on MPS (unified
+        memory, so a share of RAM), or a share of system RAM on CPU.
     """
     import torch
 
     if device.type == 'cuda':
         try:
-            return int(torch.cuda.mem_get_info(device)[0])
+            return int(torch.cuda.get_device_properties(device).total_memory)
         except Exception:
             return 2 << 30
     if device.type == 'mps':
         try:
-            return int(torch.mps.recommended_max_working_set_size())
-        except Exception:
+            return int(torch.mps.recommended_max_memory())
+        except (AttributeError, RuntimeError):
             pass
     try:
         import psutil
-        return int(psutil.virtual_memory().available)
+        # Unified memory on Apple silicon: the GPU may use most of RAM. On CPU the
+        # working set competes with everything else, so claim less.
+        return int(psutil.virtual_memory().total * (0.75 if device.type == 'mps' else 0.5))
     except Exception:
         return 4 << 30
 
@@ -238,7 +257,11 @@ def auto_patch_size(shape, n_filter: int, itemsize: int, device,
 
     patch = []
     for s, floor in zip(shape, min_side):
-        side = int(np.clip(_round_up(int(s * scale), multiple), min(floor, s), max_side))
+        # Quantise the derived side coarsely so that a small difference in the
+        # reported budget -- another torch version, a different machine of the
+        # same class -- cannot silently produce a different tile grid.
+        side = max(_round_down(int(s * scale), QUANTUM), multiple)
+        side = int(np.clip(side, min(floor, s), max_side))
         patch.append(min(_round_up(s, multiple), side))
     return tuple(patch)
 
