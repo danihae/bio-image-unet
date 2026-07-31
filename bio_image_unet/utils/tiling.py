@@ -239,6 +239,14 @@ def auto_patch_size(shape, n_filter: int, itemsize: int, device,
     -------
     tuple of int
         Patch size per axis, never larger than the image.
+
+    Notes
+    -----
+    The result is deterministic for a given device, model and image, because the
+    budget is installed memory rather than momentarily free memory. It is not
+    identical across machines with different memory, and the tile grid changes the
+    result slightly at seams -- pass an explicit ``max_patch_size`` when a run has
+    to reproduce exactly elsewhere.
     """
     shape = tuple(int(s) for s in shape)
     if min_side is None:

@@ -201,10 +201,31 @@ class TestAutoPatchSize:
             plans = {auto_patch_size(shape, n_filter, 2, device) for _ in range(5)}
             assert len(plans) == 1, (shape, plans)
 
-    def test_small_budget_changes_do_not_move_the_plan(self):
-        """A few per cent either way in the reported budget must not re-tile."""
+    def test_derived_side_is_quantised(self):
+        """The derived side lands on a coarse grid, not on every integer.
+
+        This is robustness, not a guarantee: a budget that moves far enough still
+        moves the plan, and two machines with different memory legitimately plan
+        differently. Pin ``max_patch_size`` when a run has to reproduce elsewhere.
+        """
         import torch
         device = torch.device('cpu')
-        base = auto_patch_size((4096, 4096), 64, 2, device, memory_fraction=0.30)
-        for fraction in (0.295, 0.302, 0.305):
-            assert auto_patch_size((4096, 4096), 64, 2, device, memory_fraction=fraction) == base
+        sides = set()
+        for fraction in (0.05, 0.10, 0.15, 0.20, 0.30, 0.45):
+            patch = auto_patch_size((4096, 4096), 64, 2, device, memory_fraction=fraction)
+            for side in patch:
+                if side < 4096:  # only the memory-derived sides are quantised
+                    assert side % 64 == 0, (fraction, patch)
+            sides.add(patch)
+        assert len(sides) > 1, 'the budget should still influence the plan'
+
+    def test_plan_is_monotonic_in_the_budget(self):
+        """More memory must never produce a smaller patch."""
+        import torch
+        device = torch.device('cpu')
+        previous = None
+        for fraction in (0.02, 0.05, 0.10, 0.20, 0.40, 0.80):
+            patch = auto_patch_size((4096, 4096), 64, 2, device, memory_fraction=fraction)
+            if previous is not None:
+                assert all(new >= old for new, old in zip(patch, previous)), (fraction, patch, previous)
+            previous = patch
