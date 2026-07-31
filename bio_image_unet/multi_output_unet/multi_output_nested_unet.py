@@ -157,13 +157,28 @@ class MultiOutputNestedUNet(nn.Module):
 
 
 class MultiOutputNestedUNet_3Levels(nn.Module):
+    """Nested (UNet++) 2D U-Net with three pooling levels and several output heads.
+
+    When trained with deep supervision the model carries an output head at each
+    nesting depth, and inference can stop early at any of them (``prune_level``).
+    Level 2 needs only x0_0, x0_1, x0_2, x1_0, x1_1 and x2_0, roughly half the
+    operations of the full model -- the accuracy cost has to be measured per
+    checkpoint and dataset, so the default stays at the deepest head.
+    """
+
     def __init__(self, in_channels=1, output_heads: Dict[str, dict] = None, n_filter=32, deep_supervision=False,
-                 dilation=False, train_mode=True, **kwargs):
+                 dilation=False, train_mode=True, prune_level=3, **kwargs):
         super().__init__()
         self.output_heads = output_heads or {'default': {'channels': 1, 'activation': 'sigmoid'}}
         self.deep_supervision = deep_supervision
         self.train_mode = train_mode
         self.dilation = dilation if dilation is not False else (1, 1, 1, 1)
+        if prune_level not in (1, 2, 3):
+            raise ValueError(f'prune_level must be 1, 2 or 3, got {prune_level}')
+        if prune_level != 3 and not deep_supervision:
+            raise ValueError('prune_level < 3 needs a checkpoint trained with deep supervision, '
+                             'which provides the intermediate output heads')
+        self.prune_level = prune_level
 
         # Reduced from five to four entries to remove the fourth pooling level
         nb_filter = [n_filter, n_filter * 2, n_filter * 4, n_filter * 8]
@@ -210,9 +225,17 @@ class MultiOutputNestedUNet_3Levels(nn.Module):
         x1_0 = self.conv1_0(self.pool(x0_0))
         x0_1 = self.conv0_1(torch.cat([x0_0, self.up(x1_0)], 1))
 
+        # At inference with prune_level < 3 the deeper branches are never needed,
+        # so stop before building them rather than computing and discarding them.
+        if not self.train_mode and self.prune_level == 1:
+            return self.__heads(x0_1, '_1')
+
         x2_0 = self.conv2_0(self.pool(x1_0))
         x1_1 = self.conv1_1(torch.cat([x1_0, self.up(x2_0)], 1))
         x0_2 = self.conv0_2(torch.cat([x0_0, x0_1, self.up(x1_1)], 1))
+
+        if not self.train_mode and self.prune_level == 2:
+            return self.__heads(x0_2, '_2')
 
         x3_0 = self.conv3_0(self.pool(x2_0))
         x2_1 = self.conv2_1(torch.cat([x2_0, self.up(x3_0)], 1))
@@ -238,3 +261,9 @@ class MultiOutputNestedUNet_3Levels(nn.Module):
                 outputs[name] = self.apply_activation(self.output_layers[name](x0_3), config.get('activation'))
 
         return outputs
+
+    def __heads(self, features, suffix):
+        """Apply every output head to one nesting level's features."""
+        return {name: self.apply_activation(self.output_layers[f"{name}{suffix}"](features),
+                                            config.get('activation'))
+                for name, config in self.output_heads.items()}

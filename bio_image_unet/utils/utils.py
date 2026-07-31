@@ -60,9 +60,11 @@ def get_device(print_device=False):
     Returns:
     - A torch.device object representing the selected device.
     """
-    if torch.backends.cuda.is_built():
+    # is_built() only reports how torch was compiled: a CUDA wheel installed on a
+    # machine with no visible GPU answers True, and every later call then fails.
+    if torch.cuda.is_available():
         device = torch.device('cuda:0')
-    elif torch.backends.mps.is_built():  # only for Apple M1/M2/...
+    elif torch.backends.mps.is_available():  # only for Apple M1/M2/...
         device = torch.device('mps')
     else:
         device = torch.device('cpu')
