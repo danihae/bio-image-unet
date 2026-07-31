@@ -5,8 +5,12 @@ on:
     tags: ['v*']
 
 jobs:
+  test:
+    uses: ./.github/workflows/tests.yml
+
   build-and-publish:
-    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-test')
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -16,6 +20,15 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      # PyPI accepts a version only once, so a tag that disagrees with pyproject.toml
+      # publishes the wrong release with no way to correct it in place.
+      - name: Check tag matches the version in pyproject.toml
+        run: |
+          declared=$(python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['tool']['poetry']['version'])")
+          if [ "${GITHUB_REF_NAME#v}" != "$declared" ]; then
+            echo "tag ${GITHUB_REF_NAME#v} does not match pyproject version $declared"
+            exit 1
+          fi
       - run: pip install build
       - run: python -m build
       - uses: pypa/gh-action-pypi-publish@release/v1

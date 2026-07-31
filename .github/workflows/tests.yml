@@ -1,0 +1,22 @@
+name: Tests
+
+on:
+  push:
+    branches: [master, dev]
+  pull_request:
+  workflow_call:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      # The default index serves the CUDA build of torch, which drags in ~2.5 GB of
+      # nvidia wheels. The tests run on CPU, so take the CPU wheel; installing it
+      # first also stops `pip install -e .` from pulling the CUDA one.
+      - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - run: pip install -e . pytest
+      - run: pytest -q
