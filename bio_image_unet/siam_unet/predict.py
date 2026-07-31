@@ -70,7 +70,9 @@ class Predict:
         self.show_progress = show_progress
 
         # load model
-        self.model_params = torch.load(model_params, map_location=self.device)
+        # weights_only=False: these checkpoints pickle more than tensors
+        # (optimizer state, config dicts), so state it rather than rely on the default.
+        self.model_params = torch.load(model_params, map_location=self.device, weights_only=False)
         self.model = Siam_UNet(n_filter=self.model_params['n_filter'], mode=self.model_params['mode']).to(self.device)
         self.model.load_state_dict(self.model_params['state_dict'])
         self.model.eval()

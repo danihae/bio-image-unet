@@ -2,3 +2,9 @@ __pycache__
 dist
 bio_image_unet/test_suite
 /test_temp/
+bio_image_unet/utils/temp_test/
+
+# OS / editor aux files
+.DS_Store
+.idea/
+.ipynb_checkpoints/

@@ -78,7 +78,9 @@ class Predict:
         del vol
 
         # load model and predict data
-        self.model_params = torch.load(model_params, map_location=self.device)
+        # weights_only=False: these checkpoints pickle more than tensors
+        # (optimizer state, config dicts), so state it rather than rely on the default.
+        self.model_params = torch.load(model_params, map_location=self.device, weights_only=False)
         if 'use_interpolation' not in self.model_params.keys():
             self.model_params['use_interpolation'] = False
         self.model = network(n_filter=self.model_params['n_filter'], in_channels=self.model_params['in_channels'],

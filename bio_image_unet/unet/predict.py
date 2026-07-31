@@ -80,7 +80,9 @@ class Predict:
         del imgs
 
         # load model and predict data
-        self.model_params = torch.load(model_params, map_location=self.device)
+        # weights_only=False: these checkpoints pickle more than tensors
+        # (optimizer state, config dicts), so state it rather than rely on the default.
+        self.model_params = torch.load(model_params, map_location=self.device, weights_only=False)
         if network is None:
             if 'network' in self.model_params.keys():
                 network = self.model_params['network']
