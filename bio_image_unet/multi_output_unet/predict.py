@@ -9,7 +9,7 @@ from ..progress import ProgressNotifier
 from .multi_output_nested_unet import MultiOutputNestedUNet, MultiOutputNestedUNet_3Levels
 from ..utils import get_device
 from ..utils.model_cache import load_cached_model
-from ..utils.tiling import TileBlender, auto_patch_size, pad_to_patch, plan_grid
+from ..utils.tiling import TileBlender, auto_batch_size, auto_patch_size, pad_to_patch, plan_grid
 
 # Ramp width at a seam, in pixels. Tiles are planned with at least this much
 # overlap so the ramps have room; a narrower overlap just gets a shorter ramp.
@@ -52,6 +52,9 @@ class Predict:
         batch_size : int or 'auto'
             Number of patches per forward pass. 'auto' sizes the batch from free
             GPU memory on CUDA and uses 1 elsewhere, where batching does not help.
+            It costs memory on top of the patch, not instead of it, so an
+            auto-sized patch resolves to a batch of 1; small patches leave room
+            for more.
         normalization_mode : str
             Mode for intensity normalization for 3D stacks prior to prediction. Options are:
             - 'single': Normalize each image individually.
@@ -177,24 +180,42 @@ class Predict:
         return imgs
 
     def __split_and_predict(self, imgs, batch_size, progress_notifier):
-        """Tile, run the model, and shrink the tiles if the device runs out of memory."""
+        """Tile, run the model, and back off if the device runs out of memory.
+
+        The batch gives way first, leaving the tile grid and so the result alone;
+        only then is the patch halved. Pinning the batch at 1 from the first
+        failure is what keeps each attempt smaller than the last, since the batch
+        is derived from the cost of a patch.
+        """
         cap = self.max_patch_size
+        batch_cap = None
         for attempt in range(4):
             if isinstance(cap, str) and cap == 'auto':
                 cap = auto_patch_size(self.imgs_shape[1:3], self.model_params['n_filter'],
                                       torch.finfo(self.precision).bits // 8, self.device)
             patches = self.__split(imgs, cap)
             self.batch_size = self.__resolve_batch_size(batch_size, patches.shape[0])
+            if batch_cap is not None:
+                self.batch_size = min(self.batch_size, batch_cap)
             try:
                 return self.__predict(patches, self.batch_size, progress_notifier)
             except (torch.OutOfMemoryError, RuntimeError) as exc:
                 if 'out of memory' not in str(exc).lower() or attempt == 3:
                     raise
+                shrink_patch = self.batch_size <= 1
+                # min(), so the floor cannot enlarge an already smaller patch.
+                smaller = tuple(min(c, max(256, c // 2)) for c in self.patch_size)
+                if shrink_patch and smaller == tuple(self.patch_size):
+                    raise  # at the floor: nothing left to give up
                 del patches
                 if self.device.type == 'cuda':
                     torch.cuda.empty_cache()
-                cap = tuple(max(256, c // 2) for c in self.patch_size)
-                print(f'Out of memory; retrying with max_patch_size={cap}.')
+                batch_cap = 1
+                if shrink_patch:
+                    cap = smaller
+                    print(f'Out of memory; retrying with max_patch_size={cap}.')
+                else:
+                    print('Out of memory; retrying with batch_size=1.')
 
     def __split(self, imgs, max_patch_size):
         # Plan a uniform tile grid: shrinking the patch below max_patch_size where
@@ -225,14 +246,9 @@ class Predict:
             return max(1, int(batch_size))
         if self.device.type != 'cuda':
             return 1
-        try:
-            free, _ = torch.cuda.mem_get_info(self.device)
-        except Exception:
-            return 1
-        bytes_per_patch = int(np.prod(self.patch_size)) * (2 if self.precision == torch.float16 else 4)
-        # A U-Net holds many intermediate feature maps per sample; budget a
-        # conservative multiple of the input and half of the free memory.
-        return int(np.clip(free * 0.5 // max(bytes_per_patch * 96, 1), 1, min(n_patches, 32)))
+        return auto_batch_size(self.patch_size, self.model_params['n_filter'],
+                               torch.finfo(self.precision).bits // 8, self.device,
+                               n_patches=n_patches)
 
     def __predict(self, patches, batch_size=1, progress_notifier=None):
         pin = self.device.type == 'cuda'

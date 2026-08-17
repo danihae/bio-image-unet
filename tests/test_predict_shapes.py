@@ -165,6 +165,72 @@ class TestPredict3D:
         assert result['mask'].min() >= 0.0 and result['mask'].max() <= 1.0
 
 
+class TestOutOfMemoryBackoff:
+    """The ladder walked after a device out-of-memory error.
+
+    Each attempt must ask for strictly less than the last, and the batch must give
+    way before the tile grid does, since a different grid moves every seam.
+    """
+
+    @staticmethod
+    def _trace(monkeypatch, cls, fail_times):
+        """Record (patch_size, batch_size) per attempt, failing the first few."""
+        attempts = []
+        original = cls._Predict__predict
+
+        def fake(self, *args, **kwargs):
+            attempts.append((tuple(self.patch_size), int(self.batch_size)))
+            if len(attempts) <= fail_times:
+                raise torch.OutOfMemoryError('CUDA out of memory. Tried to allocate 20.00 GiB')
+            return original(self, *args, **kwargs)
+
+        monkeypatch.setattr(cls, '_Predict__predict', fake)
+        return attempts
+
+    def test_batch_gives_way_before_the_patch(self, ckpt_2d, monkeypatch):
+        attempts = self._trace(monkeypatch, Predict2D, fail_times=1)
+        predict_2d(np.random.rand(4, 128, 128).astype('float32'), ckpt_2d,
+                   max_patch_size=(64, 64), batch_size=8)
+        assert len(attempts) == 2
+        assert attempts[0][1] == 8 and attempts[1][1] == 1
+        assert attempts[1][0] == attempts[0][0], 'the tile grid must not move while the batch can still shrink'
+
+    def test_every_attempt_asks_for_less(self, ckpt_2d, monkeypatch):
+        """Halving the patch alone buys back a larger batch, so the batch stays pinned."""
+        attempts = self._trace(monkeypatch, Predict2D, fail_times=99)
+        with pytest.raises(torch.OutOfMemoryError):
+            predict_2d(np.random.rand(2, 1024, 1024).astype('float32'), ckpt_2d,
+                       max_patch_size=(512, 512), batch_size=8)
+        assert len(attempts) >= 3
+        demand = [int(np.prod(patch)) * batch for patch, batch in attempts]
+        assert all(b < a for a, b in zip(demand, demand[1:])), attempts
+
+    def test_gives_up_once_nothing_is_left_to_shrink(self, ckpt_2d, monkeypatch):
+        """At the patch floor with a batch of 1, re-raise instead of retrying identically."""
+        attempts = self._trace(monkeypatch, Predict2D, fail_times=99)
+        with pytest.raises(torch.OutOfMemoryError):
+            predict_2d(np.random.rand(2, 64, 64).astype('float32'), ckpt_2d,
+                       max_patch_size=(64, 64), batch_size=1)
+        assert len(attempts) == 1, 'nothing could be given up, so there was nothing to retry'
+
+    def test_unrelated_runtime_errors_are_not_swallowed(self, ckpt_2d, monkeypatch):
+        def boom(self, *args, **kwargs):
+            raise RuntimeError('shapes do not match')
+
+        monkeypatch.setattr(Predict2D, '_Predict__predict', boom)
+        with pytest.raises(RuntimeError, match='shapes do not match'):
+            predict_2d(np.random.rand(2, 64, 64).astype('float32'), ckpt_2d)
+
+    def test_three_dimensional_ladder_also_descends(self, ckpt_3d, monkeypatch):
+        attempts = self._trace(monkeypatch, Predict3D, fail_times=99)
+        with pytest.raises(torch.OutOfMemoryError):
+            predict_3d(np.random.rand(2, 64, 512, 512).astype('float32'), ckpt_3d,
+                       max_patch_size=(32, 256, 256), batch_size=4)
+        assert len(attempts) >= 2
+        demand = [int(np.prod(patch)) * batch for patch, batch in attempts]
+        assert all(b < a for a, b in zip(demand, demand[1:])), attempts
+
+
 def test_model_cache_reuses_weights(ckpt_2d):
     from bio_image_unet.utils.model_cache import clear_model_cache, load_cached_model
 

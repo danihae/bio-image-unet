@@ -2,8 +2,11 @@
 import numpy as np
 import pytest
 
-from bio_image_unet.utils.tiling import (TileBlender, auto_patch_size, pad_to_patch,
-                                         plan_axis, plan_grid, redundancy)
+from bio_image_unet.utils import tiling
+from bio_image_unet.utils.tiling import (ACTIVATION_BYTES_PER_FILTER, TileBlender,
+                                         auto_batch_size, auto_patch_size, available_memory,
+                                         free_memory, pad_to_patch, plan_axis, plan_grid,
+                                         redundancy)
 
 SIZES = list(range(64, 4200, 37))
 MAX_PATCHES = (128, 256, 512, 1024)
@@ -229,3 +232,104 @@ class TestAutoPatchSize:
             if previous is not None:
                 assert all(new >= old for new, old in zip(patch, previous)), (fraction, patch, previous)
             previous = patch
+
+
+def _sample_bytes(patch, n_filter, itemsize):
+    """What one patch of activations costs, by the model both planners share."""
+    return int(np.prod(patch)) * ACTIVATION_BYTES_PER_FILTER * n_filter * itemsize
+
+
+class TestAutoBatchSize:
+    CARDS = (6 << 30, 8 << 30, 12 << 30, 24 << 30, 32 << 30, 80 << 30)
+
+    def _pin_memory(self, monkeypatch, total):
+        for name in ('available_memory', 'free_memory'):
+            monkeypatch.setattr(tiling, name, lambda device, _t=total: _t)
+
+    def test_patch_and_batch_do_not_multiply(self, monkeypatch):
+        """The regression this function exists for.
+
+        The patch spends its whole fraction of the device on one sample, so a
+        batch budgeted independently multiplied that: a 32 GiB card used to ask
+        for over 100 GiB on any multi-frame stack.
+        """
+        import torch
+        device = torch.device('cpu')
+        for total in self.CARDS:
+            self._pin_memory(monkeypatch, total)
+            patch = auto_patch_size((4096, 4096), 64, 2, device)
+            batch = auto_batch_size(patch, 64, 2, device, n_patches=500)
+            demand = batch * _sample_bytes(patch, 64, 2)
+            assert demand <= total, (total, patch, batch, demand / total)
+
+    def test_stays_within_its_share_of_free_memory(self, monkeypatch):
+        import torch
+        device = torch.device('cpu')
+        total = 32 << 30
+        self._pin_memory(monkeypatch, total)
+        for patch in [(256, 256), (512, 512), (1024, 1024), (2048, 2048), (32, 256, 256)]:
+            n_filter = 16 if len(patch) == 3 else 64
+            batch = auto_batch_size(patch, n_filter, 2, device, n_patches=1000)
+            assert batch >= 1
+            if batch > 1:  # a forced batch of 1 may exceed the share; nothing smaller exists
+                assert batch * _sample_bytes(patch, n_filter, 2) <= total * 0.6
+
+    def test_shrinks_as_the_patch_grows(self, monkeypatch):
+        """A bigger patch must never buy a bigger batch."""
+        import torch
+        device = torch.device('cpu')
+        self._pin_memory(monkeypatch, 32 << 30)
+        previous = None
+        for side in (128, 256, 512, 1024, 2048):
+            batch = auto_batch_size((side, side), 64, 2, device, n_patches=1000)
+            if previous is not None:
+                assert batch <= previous, (side, batch, previous)
+            previous = batch
+
+    def test_tracks_free_memory_not_installed(self, monkeypatch):
+        """A card another process is holding must yield a smaller batch."""
+        import torch
+        device = torch.device('cpu')
+        monkeypatch.setattr(tiling, 'available_memory', lambda device: 32 << 30)
+        monkeypatch.setattr(tiling, 'free_memory', lambda device: 32 << 30)
+        idle = auto_batch_size((512, 512), 64, 2, device, n_patches=1000, max_batch=32)
+        monkeypatch.setattr(tiling, 'free_memory', lambda device: 2 << 30)
+        busy = auto_batch_size((512, 512), 64, 2, device, n_patches=1000, max_batch=32)
+        assert busy < idle
+
+    def test_is_quantised_against_drifting_free_memory(self, monkeypatch):
+        """Drift in free memory must not change the batch, and with it the kernels."""
+        import torch
+        device = torch.device('cpu')
+        monkeypatch.setattr(tiling, 'available_memory', lambda device: 32 << 30)
+        seen = set()
+        for jitter in (1.00, 0.97, 0.94, 0.91):
+            monkeypatch.setattr(tiling, 'free_memory', lambda device, _j=jitter: int((32 << 30) * _j))
+            batch = auto_batch_size((512, 512), 64, 2, device, n_patches=1000, max_batch=32)
+            assert batch & (batch - 1) == 0, f'{batch} is not a power of two'
+            seen.add(batch)
+        assert len(seen) == 1, f'a few percent of drift changed the batch: {seen}'
+
+        monkeypatch.setattr(tiling, 'free_memory', lambda device: 4 << 30)
+        assert auto_batch_size((512, 512), 64, 2, device, n_patches=1000, max_batch=32) < min(seen)
+
+    def test_never_returns_less_than_one(self, monkeypatch):
+        import torch
+        device = torch.device('cpu')
+        self._pin_memory(monkeypatch, 1 << 20)
+        assert auto_batch_size((2048, 2048), 64, 4, device, n_patches=1000) == 1
+        assert auto_batch_size((2048, 2048), 64, 4, device, n_patches=0) == 1
+
+    def test_never_exceeds_the_work_or_the_ceiling(self, monkeypatch):
+        import torch
+        device = torch.device('cpu')
+        self._pin_memory(monkeypatch, 512 << 30)
+        assert auto_batch_size((64, 64), 64, 2, device, n_patches=3) == 3
+        assert auto_batch_size((64, 64), 64, 2, device, n_patches=1000) == 4
+        assert auto_batch_size((64, 64), 64, 2, device, n_patches=1000, max_batch=8) == 8
+        assert auto_batch_size((64, 64), 64, 2, device) == 4
+
+    def test_free_memory_falls_back_to_available_off_cuda(self):
+        import torch
+        device = torch.device('cpu')
+        assert free_memory(device) == available_memory(device)

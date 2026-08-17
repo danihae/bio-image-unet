@@ -17,7 +17,8 @@ from typing import List, Tuple
 import numpy as np
 
 __all__ = ['plan_axis', 'plan_grid', 'pad_to_patch', 'redundancy', 'TileBlender',
-           'available_memory', 'auto_patch_size', 'ACTIVATION_BYTES_PER_FILTER']
+           'available_memory', 'free_memory', 'auto_patch_size', 'auto_batch_size',
+           'ACTIVATION_BYTES_PER_FILTER']
 
 # Peak activation memory of these U-Nets, in bytes per pixel of patch, per filter
 # of the first level, per byte of the compute dtype. Measured at ~21 for both the
@@ -201,6 +202,82 @@ def available_memory(device) -> int:
         return int(psutil.virtual_memory().total * (0.75 if device.type == 'mps' else 0.5))
     except Exception:
         return 4 << 30
+
+
+def free_memory(device) -> int:
+    """Memory momentarily free on ``device``, in bytes.
+
+    Unlike :func:`available_memory` this may drift between runs, which is fine for
+    a batch size -- the batch leaves the tile grid, and so the result, alone -- but
+    not for a patch size.
+
+    Parameters
+    ----------
+    device : torch.device
+        Device the model runs on.
+
+    Returns
+    -------
+    int
+        Free memory on CUDA, else :func:`available_memory`.
+    """
+    import torch
+
+    if device.type == 'cuda':
+        try:
+            return int(torch.cuda.mem_get_info(device)[0])
+        except Exception:
+            pass
+    return available_memory(device)
+
+
+def auto_batch_size(patch_size, n_filter: int, itemsize: int, device,
+                    n_patches: int = None, memory_fraction: float = 0.6,
+                    max_batch: int = 4) -> int:
+    """How many patches of ``patch_size`` fit on the device at once.
+
+    Costed with the same activation model as :func:`auto_patch_size`, on top of
+    the patch rather than instead of it: an auto-sized patch already fills its
+    share of the device, so a batch of 1 is the normal answer there.
+
+    Parameters
+    ----------
+    patch_size : sequence of int
+        Patch shape the grid was planned with, e.g. ``(H, W)`` or ``(D, H, W)``.
+    n_filter : int
+        The model's first-level filter count, from its checkpoint.
+    itemsize : int
+        Bytes per element of the compute dtype (2 for float16, 4 for float32).
+    device : torch.device
+        Device the model runs on.
+    n_patches : int, optional
+        Total patches to predict; the batch never exceeds the work there is.
+        Default is None, meaning no such limit.
+    memory_fraction : float, optional
+        Share of free memory the batch may occupy. Default is 0.6.
+    max_batch : int, optional
+        Ceiling on the returned batch. Default is 4: measured on CUDA, batching
+        pays only for patches below ~256 px (1.3x at 128 px, peaking at 4) and
+        costs throughput above that.
+
+    Returns
+    -------
+    int
+        Batch size, at least 1.
+    """
+    elements = 1
+    for side in patch_size:
+        elements *= int(side)
+    bytes_per_sample = max(elements * ACTIVATION_BYTES_PER_FILTER * int(n_filter) * int(itemsize), 1)
+    affordable = max(int(free_memory(device) * memory_fraction) // bytes_per_sample, 1)
+    # Quantised, so that drift in free memory cannot change the batch and with it
+    # the choice of kernels. The n_patches cap below is exact, not quantised.
+    quantised = 1 << (int(affordable).bit_length() - 1)
+
+    ceiling = max(int(max_batch), 1)
+    if n_patches is not None:
+        ceiling = min(ceiling, max(int(n_patches), 1))
+    return int(np.clip(quantised, 1, ceiling))
 
 
 def auto_patch_size(shape, n_filter: int, itemsize: int, device,
