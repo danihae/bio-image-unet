@@ -1,8 +1,12 @@
 import glob
 import os
+import random
+import warnings
 from typing import Union
 
+import numpy as np
 import tifffile
+import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader, random_split
 from tqdm import tqdm
@@ -54,11 +58,37 @@ class Trainer:
         Parameter of loss function, depends on chosen loss function
     device : torch.device or str, optional
         Device to run the pytorch model on, defaults to 'auto', which selects CUDA or MPS if available.
+    seed : int, optional
+        If set, seeds Python's, numpy's and torch's global RNGs before the model is constructed, and seeds
+        the training DataLoader's shuffling, making weight init and batch order reproducible. Independent of
+        any seed used earlier by DataProcess to build the dataset.
+    deterministic : bool
+        If True (and seed is set), additionally configures cuDNN/torch for deterministic algorithms. This can
+        reduce performance and, on CUDA, also requires the CUBLAS_WORKSPACE_CONFIG environment variable to be
+        set before the process starts.
     """
     def __init__(self, dataset, num_epochs, network=Unet, batch_size=4, lr=1e-3, in_channels=1, out_channels=1,
                  channel_weights=None, n_filter=64, dilation=1, val_split=0.2, save_dir='./', save_name='model.pt',
                  save_iter=False, load_weights=False, loss_function='BCEDice', loss_params=(0.5, 0.5),
-                 device: Union[torch.device, str] = 'auto'):
+                 device: Union[torch.device, str] = 'auto', seed=None, deterministic=False):
+
+        self.seed = seed
+        self.deterministic = deterministic
+        if seed is not None:
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
+        if deterministic:
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
+            if hasattr(torch, 'use_deterministic_algorithms'):
+                torch.use_deterministic_algorithms(True, warn_only=True)
+            if torch.cuda.is_available() and os.environ.get('CUBLAS_WORKSPACE_CONFIG') not in (':4096:8', ':16:8'):
+                warnings.warn(
+                    "deterministic=True on CUDA requires the CUBLAS_WORKSPACE_CONFIG environment variable to be "
+                    "set to ':4096:8' or ':16:8' before the process starts; it is not currently set, so CUDA "
+                    "operations may still be nondeterministic.", RuntimeWarning)
 
         if device == 'auto':
             self.device = get_device()
@@ -89,7 +119,12 @@ class Trainer:
         num_train = len(dataset) - num_val
         self.dim = dataset.dim_out
         train_data, val_data = random_split(dataset, [num_train, num_val])
-        self.train_loader = DataLoader(train_data, batch_size=self.batch_size, pin_memory=True, drop_last=True)
+        if self.seed is not None:
+            generator = torch.Generator().manual_seed(self.seed)
+            self.train_loader = DataLoader(train_data, batch_size=self.batch_size, pin_memory=True, drop_last=True,
+                                           shuffle=True, generator=generator)
+        else:
+            self.train_loader = DataLoader(train_data, batch_size=self.batch_size, pin_memory=True, drop_last=True)
         self.val_loader = DataLoader(val_data, batch_size=self.batch_size, pin_memory=True, drop_last=True)
         if loss_function == 'BCEDice':
             self.criterion = BCEDiceLoss(loss_params[0], loss_params[1])
@@ -115,7 +150,8 @@ class Trainer:
                        'noise_lims': self.data.noise_lims,
                        'brightness_contrast': self.data.brightness_contrast,
                        'shiftscalerotate': self.data.shiftscalerotate,
-                       'in_channels': in_channels, 'out_channels': out_channels}
+                       'in_channels': in_channels, 'out_channels': out_channels,
+                       'seed': self.seed}
         if load_weights:
             self.state = torch.load(self.save_dir + '/' + self.save_name)
             self.model.load_state_dict(self.state['state_dict'])
